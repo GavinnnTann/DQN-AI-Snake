@@ -3,6 +3,7 @@ pygame>=2.5.0
 numpy>=1.19.5
 matplotlib>=3.3.4
 psutil>=5.8.0
+pandas>=2.2.3
 
 # PyTorch - will install CPU version by default
 torch>=2.0.0
