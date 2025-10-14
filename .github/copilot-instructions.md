@@ -46,8 +46,16 @@ Integration points and diagnostics for debugging
 Files you will most often change and why
 - `constants.py` — hyperparameter tuning, curriculum thresholds, stuck-detection parameters.
 - `enhanced_dqn.py` — agent architecture, reward shaping, curriculum advancement rules.
-- `training_ui.py` — wiring and visualization; change here only for UI/UX improvements.
+- `training_ui.py` — wiring and visualization; 4-tab UI (Training Controls, Performance, Visualization, System Settings); change here only for UI/UX improvements.
 - `game_engine.py` / `algorithms.py` — modify when changing core rules (movement, valid-move semantics) because many agents rely on them.
+
+UI Organization (training_ui.py)
+- Tab structure: Training Controls (model selection, parameters, training buttons) | Training Performance (graphs) | Model Visualization (architecture, features) | System Settings (GPU/CUDA info, diagnostics, stuck detection settings).
+- Training Controls tab layout: Training Parameters (left) | Training Controls + Statistics (right, stacked vertically) | Available Models (bottom, full width).
+- Training Controls section: Start/Stop buttons, Enable Stuck Detection checkbox (default: unchecked), status label.
+- System Settings tab: GPU/CUDA info, system diagnostics, and stuck detection parameter sliders (sensitivity, cooldown, boost amount, min improvement).
+- Stuck detection settings moved to System Settings; quick enable/disable checkbox remains in Training Controls for easy access.
+- Model selection bug fixed: double-clicking numbered models (e.g., snake_enhanced_dqn_3.pth) now auto-populates model number field with dynamic hints.
 
 Small examples (copyable) — do not break these contracts
 - Relative action mapping (training ↔ runtime):

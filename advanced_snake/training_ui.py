@@ -70,6 +70,16 @@ class TrainingUI:
             self.plot_objects = {}  # Store plot line objects for incremental updates
             self.last_episode_count = 0  # Track if new data arrived
             
+            # Initialize stuck detection variable early (needed by setup_system_settings_tab)
+            self.stuck_detection_var = tk.BooleanVar(value=False)  # Default to False (unchecked)
+            
+            # Flag to track if window is closing (prevents after() callback errors)
+            self.is_closing = False
+            self.update_ui_after_id = None  # Store the after callback ID so we can cancel it
+            
+            # Bind window close event to cleanup method
+            self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+            
             # Create main frames
         except Exception as e:
             import traceback
@@ -87,7 +97,7 @@ class TrainingUI:
         self.scan_models()
         
         # Setup periodic UI updates
-        self.root.after(500, self.update_ui)
+        self.update_ui_after_id = self.root.after(500, self.update_ui)
     
     def center_window(self, width, height):
         """Center the window on the screen."""
@@ -143,11 +153,18 @@ class TrainingUI:
         self.visualization_tab = ttk.Frame(self.main_notebook, padding="10")
         self.main_notebook.add(self.visualization_tab, text="Model Visualization")
         
+        # Tab 4: System Settings
+        self.system_settings_tab = ttk.Frame(self.main_notebook, padding="10")
+        self.main_notebook.add(self.system_settings_tab, text="System Settings")
+        
         # Set up the Training Controls tab layout
         self.setup_controls_tab()
         
         # Set up the visualization tab
         self.setup_visualization_tab()
+        
+        # Set up the system settings tab
+        self.setup_system_settings_tab()
         
         # The graph_frame will be the graph_tab now
         self.graph_frame = self.graph_tab
@@ -156,27 +173,31 @@ class TrainingUI:
         """Set up the training controls tab layout."""
         # Top frame for parameters and training controls
         self.top_frame = ttk.Frame(self.controls_tab)
-        self.top_frame.pack(fill=tk.X, pady=(0, 10))
+        self.top_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
         # Left panel - for parameters
         self.param_frame = ttk.LabelFrame(self.top_frame, text="Training Parameters", padding="10")
         self.param_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-        # Right panel - for training controls
-        self.control_frame = ttk.LabelFrame(self.top_frame, text="Training Controls", padding="10")
-        self.control_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        # Right panel container for training controls and statistics
+        right_panel = ttk.Frame(self.top_frame)
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         
-        # Middle panel - for model selection
+        # Training controls (top of right panel)
+        self.control_frame = ttk.LabelFrame(right_panel, text="Training Controls", padding="10")
+        self.control_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Statistics panel (below training controls in right panel)
+        self.stats_frame = ttk.LabelFrame(right_panel, text="Training Statistics", padding="10")
+        self.stats_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Bottom panel - for model selection
         self.middle_frame = ttk.Frame(self.controls_tab)
         self.middle_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
-        # Models panel
+        # Models panel (now takes full width)
         self.models_frame = ttk.LabelFrame(self.middle_frame, text="Available Models", padding="10")
-        self.models_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        # Right panel for statistics
-        self.stats_frame = ttk.LabelFrame(self.middle_frame, text="Training Statistics", padding="10")
-        self.stats_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        self.models_frame.pack(fill=tk.BOTH, expand=True)
         
     def setup_visualization_tab(self):
         """Set up the visualization tab with advanced model analysis features."""
@@ -198,6 +219,236 @@ class TrainingUI:
         self.live_tab = ttk.Frame(self.viz_notebook, padding="10")
         self.viz_notebook.add(self.live_tab, text="Live State Analysis")
         self.setup_live_state_viz()
+    
+    def setup_system_settings_tab(self):
+        """Set up the system settings tab with GPU/CUDA information."""
+        # Create main container with scrolling capability
+        container = ttk.Frame(self.system_settings_tab)
+        container.pack(fill=tk.BOTH, expand=True)
+        
+        # GPU/Device Information Section
+        device_section = ttk.LabelFrame(container, text="GPU & CUDA Information", padding="15")
+        device_section.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        # Enhanced CUDA detection
+        cuda_available = torch.cuda.is_available()
+        device_type = "GPU" if cuda_available else "CPU"
+        device_name = torch.cuda.get_device_name(0) if cuda_available else "N/A"
+        
+        device_text = f"Training Device: {device_type}\n{device_name}"
+        
+        # Add CUDA troubleshooting info if not available
+        if not cuda_available:
+            try:
+                # Try to import subprocess to check if nvidia-smi is available
+                import subprocess
+                try:
+                    result = subprocess.run(['nvidia-smi'], 
+                                           capture_output=True, 
+                                           text=True,
+                                           timeout=5)
+                    if result.returncode == 0:
+                        # NVIDIA driver is installed but PyTorch can't see it
+                        device_text += "\n\nGPU detected but PyTorch can't use it."
+                        device_text += "\nPossible issues:"
+                        device_text += "\n- PyTorch CUDA version mismatch"
+                        device_text += "\n- Run check_cuda.py to fix"
+                except (subprocess.SubprocessError, FileNotFoundError):
+                    # No NVIDIA driver found
+                    device_text += "\n\nNo NVIDIA GPU driver detected"
+            except ImportError:
+                pass
+        else:
+            # Show CUDA version and device properties if available
+            cuda_version = torch.version.cuda
+            device_props = torch.cuda.get_device_properties(0)
+            total_memory = device_props.total_memory / (1024**3)  # GB
+            
+            device_text += f"\nCUDA: {cuda_version}"
+            device_text += f"\nCompute: {device_props.major}.{device_props.minor}"
+            device_text += f"\nMemory: {total_memory:.2f} GB"
+            
+        self.system_device_label = ttk.Label(device_section, text=device_text, style="Bold.TLabel")
+        self.system_device_label.pack(fill=tk.X, pady=(0, 10))
+        
+        # Memory usage (will update dynamically)
+        memory_section = ttk.Frame(device_section)
+        memory_section.pack(fill=tk.X, pady=(0, 10))
+        
+        if torch.cuda.is_available():
+            memory_text = "VRAM: Calculating..."
+        else:
+            memory_text = "RAM: Calculating..."
+        
+        self.system_memory_label = ttk.Label(memory_section, text=memory_text)
+        self.system_memory_label.pack(fill=tk.X)
+        
+        # Add check CUDA button
+        button_frame = ttk.Frame(device_section)
+        button_frame.pack(fill=tk.X)
+        
+        check_cuda_btn = ttk.Button(
+            button_frame, 
+            text="Check CUDA Setup", 
+            command=self.check_cuda_setup,
+            style="Training.TButton"
+        )
+        check_cuda_btn.pack(pady=5)
+        
+        # Additional System Information Section
+        sys_info_section = ttk.LabelFrame(container, text="System Information", padding="15")
+        sys_info_section.pack(fill=tk.BOTH, expand=True)
+        
+        # PyTorch version
+        pytorch_version = f"PyTorch Version: {torch.__version__}"
+        ttk.Label(sys_info_section, text=pytorch_version).pack(fill=tk.X, pady=2)
+        
+        # Python version
+        import sys as pysys
+        python_version = f"Python Version: {pysys.version.split()[0]}"
+        ttk.Label(sys_info_section, text=python_version).pack(fill=tk.X, pady=2)
+        
+        # CUDA availability status
+        cuda_status = f"CUDA Available: {'Yes' if cuda_available else 'No'}"
+        ttk.Label(sys_info_section, text=cuda_status).pack(fill=tk.X, pady=2)
+        
+        if cuda_available:
+            # Number of GPUs
+            gpu_count = f"GPU Count: {torch.cuda.device_count()}"
+            ttk.Label(sys_info_section, text=gpu_count).pack(fill=tk.X, pady=2)
+        
+        # Stuck Detection Settings Section
+        stuck_section = ttk.LabelFrame(container, text="Stuck Detection & Epsilon Boost Settings", padding="15")
+        stuck_section.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        
+        # Description
+        desc_label = ttk.Label(
+            stuck_section, 
+            text="Configure parameters for automatic epsilon boosting when the agent gets stuck.\n"
+                 "Enable/disable stuck detection using the checkbox in Training Controls.",
+            font=('Arial', 9),
+            foreground='darkblue',
+            wraplength=500,
+            justify=tk.LEFT
+        )
+        desc_label.pack(fill=tk.X, pady=(0, 10))
+        
+        # Create a frame for stuck detection parameters
+        self.stuck_params_frame = ttk.Frame(stuck_section)
+        self.stuck_params_frame.pack(fill=tk.X)
+        
+        # Sensitivity (Stuck Counter Threshold)
+        sensitivity_frame = ttk.Frame(self.stuck_params_frame)
+        sensitivity_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(sensitivity_frame, text="Sensitivity:", width=20).pack(side=tk.LEFT)
+        
+        self.stuck_sensitivity_var = tk.IntVar(value=STUCK_COUNTER_THRESHOLD)
+        sensitivity_scale = ttk.Scale(
+            sensitivity_frame,
+            from_=1,
+            to=10,
+            variable=self.stuck_sensitivity_var,
+            orient=tk.HORIZONTAL,
+            length=200,
+            command=lambda v: self.stuck_sensitivity_label.config(
+                text=f"{int(float(v))} checks ({int(float(v)) * 50} episodes)"
+            )
+        )
+        sensitivity_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.stuck_sensitivity_label = ttk.Label(
+            sensitivity_frame,
+            text=f"{STUCK_COUNTER_THRESHOLD} checks ({STUCK_COUNTER_THRESHOLD * 50} episodes)"
+        )
+        self.stuck_sensitivity_label.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(sensitivity_frame, text="(1=aggressive, 10=conservative)", 
+                 font=('Arial', 8, 'italic'), foreground='gray').pack(side=tk.LEFT)
+        
+        # Cooldown Period
+        cooldown_frame = ttk.Frame(self.stuck_params_frame)
+        cooldown_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(cooldown_frame, text="Cooldown:", width=20).pack(side=tk.LEFT)
+        
+        self.stuck_cooldown_var = tk.IntVar(value=STUCK_BOOST_COOLDOWN)
+        cooldown_scale = ttk.Scale(
+            cooldown_frame,
+            from_=50,
+            to=500,
+            variable=self.stuck_cooldown_var,
+            orient=tk.HORIZONTAL,
+            length=200,
+            command=lambda v: self.stuck_cooldown_label.config(text=f"{int(float(v))} episodes")
+        )
+        cooldown_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.stuck_cooldown_label = ttk.Label(
+            cooldown_frame,
+            text=f"{STUCK_BOOST_COOLDOWN} episodes"
+        )
+        self.stuck_cooldown_label.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(cooldown_frame, text="(time between boosts)", 
+                 font=('Arial', 8, 'italic'), foreground='gray').pack(side=tk.LEFT)
+        
+        # Boost Amount
+        boost_frame = ttk.Frame(self.stuck_params_frame)
+        boost_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(boost_frame, text="Boost Amount:", width=20).pack(side=tk.LEFT)
+        
+        self.stuck_boost_var = tk.DoubleVar(value=STUCK_EPSILON_BOOST)
+        boost_scale = ttk.Scale(
+            boost_frame,
+            from_=0.05,
+            to=0.30,
+            variable=self.stuck_boost_var,
+            orient=tk.HORIZONTAL,
+            length=200,
+            command=lambda v: self.stuck_boost_label.config(text=f"+{float(v):.2f}")
+        )
+        boost_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.stuck_boost_label = ttk.Label(
+            boost_frame,
+            text=f"+{STUCK_EPSILON_BOOST:.2f}"
+        )
+        self.stuck_boost_label.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(boost_frame, text="(epsilon increase)", 
+                 font=('Arial', 8, 'italic'), foreground='gray').pack(side=tk.LEFT)
+        
+        # Improvement Threshold
+        improvement_frame = ttk.Frame(self.stuck_params_frame)
+        improvement_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(improvement_frame, text="Min Improvement:", width=20).pack(side=tk.LEFT)
+        
+        self.stuck_improvement_var = tk.DoubleVar(value=STUCK_IMPROVEMENT_THRESHOLD)
+        improvement_scale = ttk.Scale(
+            improvement_frame,
+            from_=2.0,
+            to=15.0,
+            variable=self.stuck_improvement_var,
+            orient=tk.HORIZONTAL,
+            length=200,
+            command=lambda v: self.stuck_improvement_label.config(text=f"{float(v):.1f} points")
+        )
+        improvement_scale.pack(side=tk.LEFT, padx=5)
+        
+        self.stuck_improvement_label = ttk.Label(
+            improvement_frame,
+            text=f"{STUCK_IMPROVEMENT_THRESHOLD:.1f} points"
+        )
+        self.stuck_improvement_label.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(improvement_frame, text="(to avoid stuck)", 
+                 font=('Arial', 8, 'italic'), foreground='gray').pack(side=tk.LEFT)
+        
+        # Set initial state of stuck params (will be controlled by checkbox in Training Controls)
+        self.on_stuck_detection_toggled()
     
     def setup_architecture_viz(self):
         """Set up the neural network architecture visualization."""
@@ -1340,149 +1591,6 @@ class TrainingUI:
         self.browse_btn.pack(side=tk.RIGHT)
         
         # ============================================================
-        # STUCK DETECTION CONTROLS - NEW!
-        # ============================================================
-        separator = ttk.Separator(self.param_frame, orient='horizontal')
-        separator.pack(fill=tk.X, pady=10)
-        
-        stuck_header_frame = ttk.Frame(self.param_frame)
-        stuck_header_frame.pack(fill=tk.X, pady=(5, 0))
-        
-        ttk.Label(stuck_header_frame, text="Stuck Detection & Epsilon Boost", 
-                 font=('Arial', 10, 'bold'), foreground='darkblue').pack(side=tk.LEFT)
-        
-        # Enable/Disable stuck detection
-        stuck_enable_frame = ttk.Frame(self.param_frame)
-        stuck_enable_frame.pack(fill=tk.X, pady=5)
-        
-        self.stuck_detection_var = tk.BooleanVar(value=ENABLE_STUCK_DETECTION)
-        stuck_check = ttk.Checkbutton(
-            stuck_enable_frame,
-            text="Enable Stuck Detection",
-            variable=self.stuck_detection_var,
-            command=self.on_stuck_detection_toggled
-        )
-        stuck_check.pack(side=tk.LEFT)
-        
-        ttk.Label(stuck_enable_frame, text="(Boosts epsilon when agent is stuck)", 
-                 font=('Arial', 8, 'italic'), foreground='gray').pack(side=tk.LEFT, padx=(10, 0))
-        
-        # Create a frame for stuck detection parameters (can be disabled)
-        self.stuck_params_frame = ttk.Frame(self.param_frame)
-        self.stuck_params_frame.pack(fill=tk.X, pady=5)
-        
-        # Sensitivity (Stuck Counter Threshold)
-        sensitivity_frame = ttk.Frame(self.stuck_params_frame)
-        sensitivity_frame.pack(fill=tk.X, pady=3)
-        
-        ttk.Label(sensitivity_frame, text="Sensitivity:").pack(side=tk.LEFT)
-        
-        self.stuck_sensitivity_var = tk.IntVar(value=STUCK_COUNTER_THRESHOLD)
-        sensitivity_scale = ttk.Scale(
-            sensitivity_frame,
-            from_=1,
-            to=10,
-            variable=self.stuck_sensitivity_var,
-            orient=tk.HORIZONTAL,
-            length=150,
-            command=lambda v: self.stuck_sensitivity_label.config(
-                text=f"{int(float(v))} checks ({int(float(v)) * 50} episodes)"
-            )
-        )
-        sensitivity_scale.pack(side=tk.LEFT, padx=5)
-        
-        self.stuck_sensitivity_label = ttk.Label(
-            sensitivity_frame,
-            text=f"{STUCK_COUNTER_THRESHOLD} checks ({STUCK_COUNTER_THRESHOLD * 50} episodes)"
-        )
-        self.stuck_sensitivity_label.pack(side=tk.LEFT, padx=5)
-        
-        ttk.Label(sensitivity_frame, text="(1=aggressive, 10=conservative)", 
-                 font=('Arial', 7, 'italic'), foreground='gray').pack(side=tk.LEFT)
-        
-        # Cooldown Period
-        cooldown_frame = ttk.Frame(self.stuck_params_frame)
-        cooldown_frame.pack(fill=tk.X, pady=3)
-        
-        ttk.Label(cooldown_frame, text="Cooldown:").pack(side=tk.LEFT)
-        
-        self.stuck_cooldown_var = tk.IntVar(value=STUCK_BOOST_COOLDOWN)
-        cooldown_scale = ttk.Scale(
-            cooldown_frame,
-            from_=50,
-            to=500,
-            variable=self.stuck_cooldown_var,
-            orient=tk.HORIZONTAL,
-            length=150,
-            command=lambda v: self.stuck_cooldown_label.config(text=f"{int(float(v))} episodes")
-        )
-        cooldown_scale.pack(side=tk.LEFT, padx=5)
-        
-        self.stuck_cooldown_label = ttk.Label(
-            cooldown_frame,
-            text=f"{STUCK_BOOST_COOLDOWN} episodes"
-        )
-        self.stuck_cooldown_label.pack(side=tk.LEFT, padx=5)
-        
-        ttk.Label(cooldown_frame, text="(time between boosts)", 
-                 font=('Arial', 7, 'italic'), foreground='gray').pack(side=tk.LEFT)
-        
-        # Boost Amount
-        boost_frame = ttk.Frame(self.stuck_params_frame)
-        boost_frame.pack(fill=tk.X, pady=3)
-        
-        ttk.Label(boost_frame, text="Boost Amount:").pack(side=tk.LEFT)
-        
-        self.stuck_boost_var = tk.DoubleVar(value=STUCK_EPSILON_BOOST)
-        boost_scale = ttk.Scale(
-            boost_frame,
-            from_=0.05,
-            to=0.30,
-            variable=self.stuck_boost_var,
-            orient=tk.HORIZONTAL,
-            length=150,
-            command=lambda v: self.stuck_boost_label.config(text=f"+{float(v):.2f}")
-        )
-        boost_scale.pack(side=tk.LEFT, padx=5)
-        
-        self.stuck_boost_label = ttk.Label(
-            boost_frame,
-            text=f"+{STUCK_EPSILON_BOOST:.2f}"
-        )
-        self.stuck_boost_label.pack(side=tk.LEFT, padx=5)
-        
-        ttk.Label(boost_frame, text="(epsilon increase)", 
-                 font=('Arial', 7, 'italic'), foreground='gray').pack(side=tk.LEFT)
-        
-        # Improvement Threshold
-        improvement_frame = ttk.Frame(self.stuck_params_frame)
-        improvement_frame.pack(fill=tk.X, pady=3)
-        
-        ttk.Label(improvement_frame, text="Min Improvement:").pack(side=tk.LEFT)
-        
-        self.stuck_improvement_var = tk.DoubleVar(value=STUCK_IMPROVEMENT_THRESHOLD)
-        improvement_scale = ttk.Scale(
-            improvement_frame,
-            from_=2.0,
-            to=15.0,
-            variable=self.stuck_improvement_var,
-            orient=tk.HORIZONTAL,
-            length=150,
-             command=lambda v: self.stuck_improvement_label.config(text=f"{float(v):.1f} points")
-        )
-        improvement_scale.pack(side=tk.LEFT, padx=5)
-        
-        self.stuck_improvement_label = ttk.Label(
-            improvement_frame,
-            text=f"{STUCK_IMPROVEMENT_THRESHOLD:.1f} points"
-        )
-        self.stuck_improvement_label.pack(side=tk.LEFT, padx=5)
-        
-        ttk.Label(improvement_frame, text="(to avoid stuck)", 
-                 font=('Arial', 7, 'italic'), foreground='gray').pack(side=tk.LEFT)
-        
-        # Set initial state of stuck params
-        self.on_stuck_detection_toggled()
 
     def create_models_panel(self):
         """Create the available models panel with a Treeview."""
@@ -1581,71 +1689,6 @@ class TrainingUI:
 
     def create_training_controls(self):
         """Create training control buttons."""
-        # GPU/Device info
-        device_frame = ttk.Frame(self.control_frame)
-        device_frame.pack(fill=tk.X, pady=5)
-        
-        # Enhanced CUDA detection
-        cuda_available = torch.cuda.is_available()
-        device_type = "GPU" if cuda_available else "CPU"
-        device_name = torch.cuda.get_device_name(0) if cuda_available else "N/A"
-        
-        device_text = f"Training Device: {device_type}\n{device_name}"
-        
-        # Add CUDA troubleshooting info if not available
-        if not cuda_available:
-            try:
-                # Try to import subprocess to check if nvidia-smi is available
-                import subprocess
-                try:
-                    result = subprocess.run(['nvidia-smi'], 
-                                           capture_output=True, 
-                                           text=True,
-                                           timeout=5)
-                    if result.returncode == 0:
-                        # NVIDIA driver is installed but PyTorch can't see it
-                        device_text += "\n\nGPU detected but PyTorch can't use it."
-                        device_text += "\nPossible issues:"
-                        device_text += "\n- PyTorch CUDA version mismatch"
-                        device_text += "\n- Run check_cuda.py to fix"
-                except (subprocess.SubprocessError, FileNotFoundError):
-                    # No NVIDIA driver found
-                    device_text += "\n\nNo NVIDIA GPU driver detected"
-            except ImportError:
-                pass
-        else:
-            # Show CUDA version and device properties if available
-            cuda_version = torch.version.cuda
-            device_props = torch.cuda.get_device_properties(0)
-            total_memory = device_props.total_memory / (1024**3)  # GB
-            
-            device_text += f"\nCUDA: {cuda_version}"
-            device_text += f"\nCompute: {device_props.major}.{device_props.minor}"
-            device_text += f"\nMemory: {total_memory:.2f} GB"
-            
-        self.device_label = ttk.Label(device_frame, text=device_text, style="Bold.TLabel")
-        self.device_label.pack(fill=tk.X)
-        
-        # Add check CUDA button
-        check_cuda_btn = ttk.Button(
-            device_frame, 
-            text="Check CUDA", 
-            command=self.check_cuda_setup
-        )
-        check_cuda_btn.pack(pady=(5, 0))
-        
-        # Memory usage (will update dynamically)
-        self.memory_frame = ttk.Frame(self.control_frame)
-        self.memory_frame.pack(fill=tk.X, pady=5)
-        
-        if torch.cuda.is_available():
-            memory_text = "VRAM: Calculating..."
-        else:
-            memory_text = "RAM: Calculating..."
-        
-        self.memory_label = ttk.Label(self.memory_frame, text=memory_text)
-        self.memory_label.pack(fill=tk.X)
-        
         # Start button
         self.start_btn = ttk.Button(
             self.control_frame, 
@@ -1664,6 +1707,22 @@ class TrainingUI:
             state=tk.DISABLED
         )
         self.stop_btn.pack(fill=tk.X, pady=5)
+        
+        # Stuck Detection checkbox
+        stuck_check_frame = ttk.Frame(self.control_frame)
+        stuck_check_frame.pack(fill=tk.X, pady=5)
+        
+        # Note: stuck_detection_var is initialized in __init__ to avoid AttributeError
+        stuck_check = ttk.Checkbutton(
+            stuck_check_frame,
+            text="Enable Stuck Detection",
+            variable=self.stuck_detection_var,
+            command=self.on_stuck_detection_toggled
+        )
+        stuck_check.pack(side=tk.LEFT)
+        
+        ttk.Label(stuck_check_frame, text="(Configure in System Settings)", 
+                 font=('Arial', 8, 'italic'), foreground='gray').pack(side=tk.LEFT, padx=(10, 0))
         
         # Training status
         status_frame = ttk.Frame(self.control_frame)
@@ -3079,17 +3138,27 @@ class TrainingUI:
                 total = torch.cuda.get_device_properties(0).total_memory / (1024**3)  # GB
                 
                 memory_text = f"VRAM: {allocated:.2f} GB allocated, {reserved:.2f}/{total:.2f} GB reserved"
-                self.memory_label.config(text=memory_text)
+                
+                # Update system settings tab label
+                if hasattr(self, 'system_memory_label'):
+                    self.system_memory_label.config(text=memory_text)
             except:
-                self.memory_label.config(text="VRAM: Error reading GPU memory")
+                memory_text = "VRAM: Error reading GPU memory"
+                if hasattr(self, 'system_memory_label'):
+                    self.system_memory_label.config(text=memory_text)
         else:
             try:
                 # Get system RAM usage
                 ram = psutil.virtual_memory()
                 memory_text = f"RAM: {ram.used/(1024**3):.2f}/{ram.total/(1024**3):.2f} GB ({ram.percent}%)"
-                self.memory_label.config(text=memory_text)
+                
+                # Update system settings tab label
+                if hasattr(self, 'system_memory_label'):
+                    self.system_memory_label.config(text=memory_text)
             except:
-                self.memory_label.config(text="RAM: Error reading system memory")
+                memory_text = "RAM: Error reading system memory"
+                if hasattr(self, 'system_memory_label'):
+                    self.system_memory_label.config(text=memory_text)
                 
     def check_cuda_setup(self):
         """Run CUDA setup check and display results."""
@@ -3137,19 +3206,31 @@ class TrainingUI:
 
     def update_ui(self):
         """Periodically update the UI elements with performance optimizations."""
+        # Check if window is closing first
+        if self.is_closing:
+            return
+        
         # OPTIMIZATION 1: Skip updates if window is minimized/hidden
         try:
             window_state = self.root.state()
             if window_state in ('iconic', 'withdrawn'):
                 # Window minimized/hidden, skip expensive updates
-                update_interval = self.get_dynamic_update_interval()
-                self.root.after(update_interval, self.update_ui)
+                if not self.is_closing:
+                    update_interval = self.get_dynamic_update_interval()
+                    self.update_ui_after_id = self.root.after(update_interval, self.update_ui)
                 return
+        except tk.TclError:
+            # Window has been destroyed
+            self.is_closing = True
+            return
         except:
-            pass  # Continue if state check fails
+            pass  # Continue if state check fails for other reasons
         
         # Update memory usage (lightweight)
-        self.update_memory_usage()
+        try:
+            self.update_memory_usage()
+        except:
+            pass  # Ignore errors if window is being destroyed
         
         # OPTIMIZATION 2: Only update graph if training is active AND new data arrived
         if self.is_training and hasattr(self, 'training_data') and self.training_data['scores']:
@@ -3167,20 +3248,56 @@ class TrainingUI:
                 )
                 
                 # Update the graph with current training data
-                self.update_training_graph(
-                    scores=self.training_data['scores'],
-                    running_avgs=self.training_data['running_avgs'],
-                    losses=self.training_data.get('losses', []),
-                    q_values=self.training_data.get('q_values', []),
-                    force_full_redraw=should_full_redraw
-                )
-                
-                if should_full_redraw:
-                    self.last_full_redraw = current_episode_count
+                try:
+                    self.update_training_graph(
+                        scores=self.training_data['scores'],
+                        running_avgs=self.training_data['running_avgs'],
+                        losses=self.training_data.get('losses', []),
+                        q_values=self.training_data.get('q_values', []),
+                        force_full_redraw=should_full_redraw
+                    )
+                    
+                    if should_full_redraw:
+                        self.last_full_redraw = current_episode_count
+                except:
+                    pass  # Ignore errors if window is being destroyed
         
         # OPTIMIZATION 4: Schedule next update with dynamic interval
-        update_interval = self.get_dynamic_update_interval()
-        self.root.after(update_interval, self.update_ui)
+        # Only schedule if window is not closing
+        if not self.is_closing:
+            try:
+                update_interval = self.get_dynamic_update_interval()
+                self.update_ui_after_id = self.root.after(update_interval, self.update_ui)
+            except tk.TclError:
+                # Window destroyed, stop scheduling
+                self.is_closing = True
+    
+    def on_closing(self):
+        """Handle window close event to prevent after() callback errors."""
+        # Set closing flag to prevent further after() callbacks
+        self.is_closing = True
+        
+        # Cancel any pending update_ui callback
+        if self.update_ui_after_id is not None:
+            try:
+                self.root.after_cancel(self.update_ui_after_id)
+                self.update_ui_after_id = None
+            except:
+                pass
+        
+        # Stop training if active
+        if self.is_training:
+            try:
+                self.stop_training()
+            except:
+                pass
+        
+        # Destroy the window and quit the application
+        try:
+            self.root.quit()  # Exit the mainloop
+            self.root.destroy()  # Destroy the window
+        except:
+            pass
 
 def main():
     """Main entry point for the Training UI."""
