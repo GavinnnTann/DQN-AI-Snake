@@ -1296,7 +1296,8 @@ class TrainingUI:
         self.use_checkpoint_check = ttk.Checkbutton(
             checkpoint_frame,
             variable=self.use_checkpoint_var,
-            text="(Unchecked = continue training)"
+            text="(Unchecked = continue training)",
+            command=self.update_model_number_hint  # Update hint when checkbox changes
         )
         self.use_checkpoint_check.pack(side=tk.RIGHT)
         
@@ -2551,6 +2552,45 @@ class TrainingUI:
             return 1
         
         return max(numbers) + 1
+    
+    def update_model_number_hint(self):
+        """Update the model number hint label based on current selection."""
+        model_num = self.model_number_var.get().strip()
+        
+        if model_num:
+            # User has entered or selected a model number
+            model_filename = f"snake_enhanced_dqn_{model_num}.pth"
+            model_path = os.path.join(self.model_dir, model_filename)
+            
+            if os.path.exists(model_path):
+                if self.use_checkpoint_var.get():
+                    # New model checkbox is checked - will overwrite
+                    hint_text = f"⚠ Will create NEW model #{model_num} (overwrites existing)"
+                    hint_color = 'orange'
+                else:
+                    # Will continue training
+                    hint_text = f"✓ Will continue training model #{model_num}"
+                    hint_color = 'green'
+            else:
+                # Model doesn't exist
+                hint_text = f"✓ Will create NEW model #{model_num}"
+                hint_color = 'blue'
+        else:
+            # No model number specified - will use default
+            default_model_path = os.path.join(self.model_dir, "snake_enhanced_dqn.pth")
+            
+            if os.path.exists(default_model_path):
+                if self.use_checkpoint_var.get():
+                    hint_text = f"⚠ Will create NEW default model (overwrites existing)"
+                    hint_color = 'orange'
+                else:
+                    hint_text = f"✓ Will continue training default model"
+                    hint_color = 'green'
+            else:
+                hint_text = f"✓ Will create NEW default model (next available: {self.next_model_number})"
+                hint_color = 'blue'
+        
+        self.model_number_hint_label.config(text=hint_text, foreground=hint_color)
 
     def start_training(self):
         """Start the training process."""
