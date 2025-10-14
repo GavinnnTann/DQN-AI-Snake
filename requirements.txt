@@ -1,0 +1,14 @@
+# Core dependencies
+pygame>=2.5.0
+numpy>=1.19.5
+matplotlib>=3.3.4
+psutil>=5.8.0
+
+# PyTorch - will install CPU version by default
+torch>=2.0.0
+
+# For CUDA support, run check_cuda.py or install manually:
+# pip install torch==2.0.0+cu118 -f https://download.pytorch.org/whl/torch_stable.html
+
+# Note: Replace cu118 with your CUDA version (cu117, cu116, etc.)
+# To check CUDA compatibility: python check_cuda.py
