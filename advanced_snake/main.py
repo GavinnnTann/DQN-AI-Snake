@@ -213,6 +213,103 @@ class SnakeGame:
                 print(f"Error saving highscore: {e}")
         return False
     
+    def print_final_game_state(self):
+        """Print the final game state to terminal when game ends."""
+        print("\n" + "="*60)
+        print("🎮 GAME OVER - Final State")
+        print("="*60)
+        
+        # Basic game info
+        print(f"Mode: {self.current_mode}")
+        print(f"Final Score: {self.game_engine.score}")
+        print(f"Snake Length: {len(self.game_engine.snake)}")
+        print(f"Food Eaten: {self.game_engine.score // 10}")  # Each food = 10 points
+        
+        # Convert deque to list for slicing
+        snake_list = list(self.game_engine.snake)
+        
+        # Snake position details
+        head = snake_list[0]
+        print(f"\nSnake Head Position: ({head[0]}, {head[1]})")
+        print(f"Direction: {self.direction_to_string(self.game_engine.direction)}")
+        
+        # Food position
+        food = self.game_engine.food
+        print(f"Food Position: ({food[0]}, {food[1]})")
+        
+        # Calculate distance to food
+        distance_to_food = abs(head[0] - food[0]) + abs(head[1] - food[1])
+        print(f"Distance to Food: {distance_to_food} blocks")
+        
+        # Cause of death
+        print(f"\n💀 Cause of Death:")
+        if head[0] < 0 or head[0] >= GRID_WIDTH or head[1] < 0 or head[1] >= GRID_HEIGHT:
+            print(f"   - Hit wall at boundary")
+            if head[0] < 0:
+                print(f"   - Left wall (x={head[0]})")
+            elif head[0] >= GRID_WIDTH:
+                print(f"   - Right wall (x={head[0]})")
+            elif head[1] < 0:
+                print(f"   - Top wall (y={head[1]})")
+            else:
+                print(f"   - Bottom wall (y={head[1]})")
+        elif head in snake_list[1:]:
+            collision_index = snake_list[1:].index(head) + 1
+            print(f"   - Collided with own body")
+            print(f"   - Hit segment #{collision_index} of {len(snake_list)}")
+        
+        # DQN specific debug info
+        if self.current_mode == DQN_MODE and self.dqn_agent is not None:
+            print(f"\n🤖 DQN Agent Info:")
+            if self.last_action is not None:
+                actions = ["Turn Right", "Straight", "Turn Left"]
+                print(f"   Last Action: {actions[self.last_action]}")
+            
+            if self.last_q_values is not None:
+                print(f"   Last Q-Values:")
+                actions = ["Turn Right", "Straight", "Turn Left"]
+                for i, (action, q_val) in enumerate(zip(actions, self.last_q_values)):
+                    marker = " ←" if i == self.last_action else ""
+                    print(f"      {action}: {q_val:.4f}{marker}")
+            
+            if self.last_state_summary is not None:
+                print(f"   State at Death:")
+                print(f"      Danger - Straight: {self.last_state_summary.get('danger_straight', 0) > 0.5}")
+                print(f"      Danger - Right: {self.last_state_summary.get('danger_right', 0) > 0.5}")
+                print(f"      Danger - Left: {self.last_state_summary.get('danger_left', 0) > 0.5}")
+        
+        # Snake body visualization (first 5 and last 5 segments for long snakes)
+        print(f"\n🐍 Snake Body ({len(snake_list)} segments):")
+        if len(snake_list) <= 10:
+            for i, segment in enumerate(snake_list):
+                marker = "HEAD" if i == 0 else f"#{i}"
+                print(f"   [{marker}] ({segment[0]}, {segment[1]})")
+        else:
+            # Show first 5
+            for i in range(5):
+                segment = snake_list[i]
+                marker = "HEAD" if i == 0 else f"#{i}"
+                print(f"   [{marker}] ({segment[0]}, {segment[1]})")
+            print(f"   ... ({len(snake_list) - 10} segments omitted) ...")
+            # Show last 5
+            for i in range(len(snake_list) - 5, len(snake_list)):
+                segment = snake_list[i]
+                print(f"   [#{i}] ({segment[0]}, {segment[1]})")
+        
+        print("="*60 + "\n")
+    
+    def direction_to_string(self, direction):
+        """Convert direction tuple to readable string."""
+        if direction == UP:
+            return "UP ↑"
+        elif direction == DOWN:
+            return "DOWN ↓"
+        elif direction == LEFT:
+            return "LEFT ←"
+        elif direction == RIGHT:
+            return "RIGHT →"
+        return "UNKNOWN"
+    
     def convert_relative_to_absolute_direction(self, relative_action):
         """
         Convert relative action to absolute direction.
@@ -432,6 +529,9 @@ class SnakeGame:
             
             # Check game over
             if self.game_engine.game_over:
+                # Print final game state to terminal
+                self.print_final_game_state()
+                
                 # Check for new highscore
                 self.save_highscore(self.game_engine.score)
                 self.game_state = STATE_GAME_OVER

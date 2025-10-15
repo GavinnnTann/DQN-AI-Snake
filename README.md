@@ -4,9 +4,9 @@ An advanced implementation of the classic Snake game featuring multiple AI agent
 
 ---
 
-## ⚡ Quick Start Guide
+## Quick Start Guide
 
-### 🎮 Just Want to Play?
+### Just Want to Play?
 
 ```bash
 # 1. Install dependencies
@@ -20,11 +20,11 @@ python play_snake.py
 
 ---
 
-### 🤖 Want to Train an AI?
+### Want to Train an AI?
 
 ```bash
 # 1. Install dependencies (if not done)
-pip install torch pygame numpy matplotlib tkinter psutil
+pip install torch pygame numpy matplotlib tkinter psutil pandas
 
 # 2. Launch training interface
 python train_snake.py
@@ -44,7 +44,7 @@ python train_snake.py
 
 ---
 
-### 🚀 5-Minute Setup
+### 5-Minute Setup
 
 **Complete setup from scratch:**
 
@@ -73,28 +73,28 @@ python play_snake.py
 
 ---
 
-## 📖 Table of Contents
+## Table of Contents
 
-- [⚡ Quick Start Guide](#-quick-start-guide)
-- [🎮 Features](#-features)
+-  [Quick Start Guide](#-quick-start-guide)
+- [Features](#-features)
   - [Game Modes](#game-modes)
   - [Training System](#training-system)
   - [Training UI Features](#training-ui-features)
   - [Debug Mode](#debug-mode)
-- [📋 Requirements](#-requirements)
-- [🚀 Installation](#-installation)
-- [🎯 Usage](#-usage)
+- [Requirements](#-requirements)
+- [Installation](#-installation)
+- [Usage](#-usage)
   - [Playing the Game](#playing-the-game)
   - [Training AI Models](#training-ai-models)
-- [📊 Training Tips](#-training-tips)
-- [🧠 Model Architecture](#-model-architecture)
-- [📁 Project Structure](#-project-structure)
-- [🐛 Known Issues](#-known-issues)
-- [📝 Version History](#-version-history)
+- [Training Tips](#-training-tips)
+- [Model Architecture](#-model-architecture)
+- [Project Structure](#-project-structure)
+- [Known Issues](#-known-issues)
+- [Version History](#-version-history)
 
 ---
 
-## 🎮 Features
+## Features
 
 ### Game Modes
 
@@ -132,18 +132,12 @@ python play_snake.py
   - Prioritized Experience Replay: Focus on important transitions
   - Learning rate decay: 0.002 → 0.001 (ep 500) → 0.0005 (ep 800)
 
-#### **Original DQN**
-- **11 Features**: Basic state representation
-- Standard DQN with Double DQN and Prioritized Experience Replay
-- Good baseline performance
-
 ### Training UI Features
 
 **Comprehensive GUI for Training Control:**
 
 1. **Training Controls**
    - Episode count configuration (100-10000)
-   - Model type selection (Original DQN vs Enhanced DQN)
    - Learning rate adjustment (with spinbox for precision)
    - Batch size selection (32-512)
    - Save interval configuration
@@ -190,7 +184,7 @@ Press **'G'** during gameplay to toggle debug overlay:
 - Tkinter (for training UI)
 - psutil (for memory monitoring)
 
-## 🚀 Installation
+## Installation
 
 1. Clone the repository and navigate to the Snake Game directory:
 
@@ -209,7 +203,7 @@ Or install individually:
 pip install torch torchvision pygame matplotlib numpy psutil
 ```
 
-## 🎯 Usage
+## Usage
 
 ### Playing the Game
 
@@ -324,7 +318,7 @@ In the main game menu:
 4. Select "Start Game" and choose "DQN" or "Enhanced DQN" mode
 5. The selected model will be used
 
-## 📊 Training Tips
+## Training Tips
 
 ### For Best Results:
 
@@ -361,7 +355,7 @@ In the main game menu:
 - Increase episodes to 2000+
 - Check that curriculum stages are progressing
 
-## 🧠 Model Architecture
+## Model Architecture
 
 ### Enhanced DQN Network
 
@@ -383,21 +377,7 @@ State Value (1 node)              Advantage per Action (4 nodes)
 
 **Total Parameters:** ~67,000
 
-### Original DQN Network
-
-```
-Input Layer (11 features)
-    ↓
-Hidden Layer 1 (128 nodes, ReLU)
-    ↓
-Hidden Layer 2 (64 nodes, ReLU)
-    ↓
-Output Layer (4 actions)
-```
-
-**Total Parameters:** ~10,000
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 Snake Game/
@@ -423,7 +403,7 @@ Snake Game/
         └── ...
 ```
 
-## 🎓 Learning Resources
+## Learning Resources
 
 ### Understanding the Features
 
@@ -458,13 +438,13 @@ Snake Game/
 - **Curriculum Stage**: Current learning stage (0-4)
 - **A* Guidance Probability**: How often A* hints are used for rewards
 
-## 🐛 Known Issues
+## Known Issues
 
 1. **CUDA Availability**: If PyTorch can't detect GPU, run `check_cuda.py` in advanced_snake directory
 2. **Training UI Memory**: Long training sessions may consume significant RAM; restart UI if slow
 3. **Model Compatibility**: Enhanced DQN models are NOT compatible with Original DQN mode (and vice versa)
 
-## 📝 Version History
+## Version History
 
 ### v3.0 (Current)
 - Added Enhanced DQN with 34 features
@@ -487,7 +467,7 @@ Snake Game/
 - Basic Snake game with Manual, A*, Dijkstra modes
 - Q-learning agent
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Areas for improvement:
 - Additional curriculum stages
@@ -496,11 +476,11 @@ Contributions are welcome! Areas for improvement:
 - Performance benchmarking
 - Documentation improvements
 
-## 📄 License
+## License
 
 This project is open source and available under the MIT License.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Deep Q-Learning paper: Mnih et al. (2015)
 - Double DQN: van Hasselt et al. (2015)
@@ -509,4 +489,4 @@ This project is open source and available under the MIT License.
 
 ---
 
-**Happy Snake Gaming and Training! 🐍🎮🧠**
+**Happy Snake Gaming and Training! 🐍**
