@@ -361,8 +361,8 @@ class SnakeGame:
     
     def update_available_modes(self):
         """Update the available game modes based on trained models."""
-        # Start with base modes
-        available_modes = [MANUAL_MODE, ASTAR_MODE, DIJKSTRA_MODE]
+        # Start with base modes (including Hamiltonian and DHCR which need no training)
+        available_modes = [MANUAL_MODE, ASTAR_MODE, DIJKSTRA_MODE, HAMILTONIAN_MODE, DHCR_MODE]
         
         # Check if Q-learning model is available
         q_model_path = os.path.join(QMODEL_DIR, QMODEL_FILE)
@@ -401,6 +401,7 @@ class SnakeGame:
     
     def reset_game(self):
         """Reset the game state."""
+        # Normal reset for all modes
         self.game_engine.reset_game()
         
         # If we're in a game, ensure the state is playing
@@ -491,6 +492,14 @@ class SnakeGame:
                 # Dijkstra's algorithm mode
                 direction = self.algorithms.get_next_move_dijkstra()
                 self.game_engine.set_direction_from_algorithm(direction)
+            elif self.current_mode == HAMILTONIAN_MODE:
+                # Hamiltonian cycle mode - guaranteed win
+                direction = self.algorithms.get_next_move_hamiltonian()
+                self.game_engine.set_direction_from_algorithm(direction)
+            elif self.current_mode == DHCR_MODE:
+                # DHCR mode - Hamiltonian with A* shortcuts
+                direction = self.algorithms.get_next_move_dhcr()
+                self.game_engine.set_direction_from_algorithm(direction)
             elif self.current_mode == QLEARNING_MODE and self.q_agent is not None:
                 # Q-learning algorithm mode
                 direction = self.q_agent.get_next_move_qlearning()
@@ -556,10 +565,10 @@ class SnakeGame:
         # Draw title
         font_title = pygame.font.Font(None, 64)
         title_text = font_title.render(GAME_TITLE, True, GREEN)
-        title_rect = title_text.get_rect(center=(SCREEN_WIDTH // 2, 100))
+        title_rect = title_text.get_rect(center=(SCREEN_WIDTH // 2, 80))
         self.screen.blit(title_text, title_rect)
         
-        # Draw menu options
+        # Draw menu options - adjusted spacing
         font_menu = pygame.font.Font(None, 36)
         for i, option in enumerate(self.menu_options):
             if i == self.selected_option:
@@ -568,11 +577,11 @@ class SnakeGame:
                 color = WHITE
             
             text = font_menu.render(option, True, color)
-            rect = text.get_rect(center=(SCREEN_WIDTH // 2, 250 + i * 50))
+            rect = text.get_rect(center=(SCREEN_WIDTH // 2, 180 + i * 55))
             self.screen.blit(text, rect)
         
-        # Draw instructions
-        font_instructions = pygame.font.Font(None, 24)
+        # Draw instructions - moved down and better spacing
+        font_instructions = pygame.font.Font(None, 22)
         instructions = [
             "Use UP/DOWN or W/S keys to navigate",
             "Press ENTER to select an option",
@@ -582,11 +591,11 @@ class SnakeGame:
         
         for i, instruction in enumerate(instructions):
             text = font_instructions.render(instruction, True, GRAY)
-            rect = text.get_rect(center=(SCREEN_WIDTH // 2, 400 + i * 30))
+            rect = text.get_rect(center=(SCREEN_WIDTH // 2, 420 + i * 28))
             self.screen.blit(text, rect)
             
-        # Display model status (Q-Learning and DQN)
-        status_font = pygame.font.Font(None, 20)
+        # Display model status (Q-Learning and DQN) - moved down
+        status_font = pygame.font.Font(None, 18)
         
         # Q-learning model status
         q_model_path = os.path.join(QMODEL_DIR, QMODEL_FILE)
@@ -598,7 +607,7 @@ class SnakeGame:
             q_status_color = DARK_GRAY
         
         q_text = status_font.render(q_status_text, True, q_status_color)
-        q_rect = q_text.get_rect(center=(SCREEN_WIDTH // 2, 520))
+        q_rect = q_text.get_rect(center=(SCREEN_WIDTH // 2, 535))
         self.screen.blit(q_text, q_rect)
         
         # DQN model status (check both Enhanced and standard)
@@ -615,12 +624,12 @@ class SnakeGame:
             dqn_status_color = DARK_GRAY
         
         dqn_text = status_font.render(dqn_status_text, True, dqn_status_color)
-        dqn_rect = dqn_text.get_rect(center=(SCREEN_WIDTH // 2, 545))
+        dqn_rect = dqn_text.get_rect(center=(SCREEN_WIDTH // 2, 558))
         self.screen.blit(dqn_text, dqn_rect)
         
-        # Show warning message if selected mode requires training
+        # Show warning message if selected mode requires training - moved down
         if self.mode_index < len(GAME_MODES):
-            warning_font = pygame.font.Font(None, 22)
+            warning_font = pygame.font.Font(None, 20)
             warning_text = None
             
             if GAME_MODES[self.mode_index] == QLEARNING_MODE and not os.path.exists(q_model_path):
@@ -633,7 +642,7 @@ class SnakeGame:
             
             if warning_text:
                 warning = warning_font.render(warning_text, True, RED)
-                warning_rect = warning.get_rect(center=(SCREEN_WIDTH // 2, 570))
+                warning_rect = warning.get_rect(center=(SCREEN_WIDTH // 2, 583))
                 self.screen.blit(warning, warning_rect)
     
     def render_game(self):
@@ -641,8 +650,8 @@ class SnakeGame:
         # Render game elements (snake, food, etc.)
         self.game_engine.render(self.screen)
         
-        # Render game info
-        font = pygame.font.Font(None, 24)
+        # Render game info - smaller font to reduce clutter
+        font = pygame.font.Font(None, 22)
         
         # Mode
         mode_text = font.render(f"Mode: {self.current_mode}", True, WHITE)
@@ -651,41 +660,43 @@ class SnakeGame:
         # Speed
         speed_name = list(FRAME_RATES.keys())[self.speed_index]
         speed_text = font.render(f"Speed: {speed_name}", True, WHITE)
-        self.screen.blit(speed_text, (10, 40))
+        self.screen.blit(speed_text, (10, 35))
         
         # Score
         score_text = font.render(f"Score: {self.game_engine.score}", True, WHITE)
-        self.screen.blit(score_text, (10, 70))
+        self.screen.blit(score_text, (10, 60))
         
         # Highscore
         highscore_color = YELLOW if self.game_engine.score >= self.highscore else WHITE
         highscore_text = font.render(f"Highscore: {self.highscore}", True, highscore_color)
-        self.screen.blit(highscore_text, (10, 100))
+        self.screen.blit(highscore_text, (10, 85))
         
         # Render debug overlay if debug mode is active and DQN mode
         if self.debug_mode and self.current_mode == DQN_MODE and self.dqn_agent is not None:
-            debug_y_offset = 140
+            # Use smaller font for debug info to prevent overlap
+            debug_font = pygame.font.Font(None, 18)
+            debug_y_offset = 120
             
             # Q-values display
             if self.last_q_values is not None:
-                q_text = font.render("Q-Values:", True, YELLOW)
+                q_text = debug_font.render("Q-Values:", True, YELLOW)
                 self.screen.blit(q_text, (10, debug_y_offset))
-                debug_y_offset += 25
+                debug_y_offset += 20
                 
                 actions = ["Straight", "Right", "Left"]
                 for i, (action_name, q_val) in enumerate(zip(actions, self.last_q_values)):
                     color = GREEN if i == self.last_action else WHITE
                     marker = " <--" if i == self.last_action else ""
-                    q_line = font.render(f"  {action_name}: {q_val:.3f}{marker}", True, color)
+                    q_line = debug_font.render(f"  {action_name}: {q_val:.3f}{marker}", True, color)
                     self.screen.blit(q_line, (10, debug_y_offset))
-                    debug_y_offset += 20
+                    debug_y_offset += 18
             
             # State summary display
             if self.last_state_summary is not None:
                 debug_y_offset += 5
-                state_text = font.render("Danger:", True, YELLOW)
+                state_text = debug_font.render("Danger:", True, YELLOW)
                 self.screen.blit(state_text, (10, debug_y_offset))
-                debug_y_offset += 25
+                debug_y_offset += 20
                 
                 danger_items = [
                     ("Straight", self.last_state_summary.get('danger_straight', 0)),
@@ -696,14 +707,14 @@ class SnakeGame:
                 for name, value in danger_items:
                     color = RED if value > 0.5 else GREEN
                     status = "YES" if value > 0.5 else "No"
-                    danger_line = font.render(f"  {name}: {status}", True, color)
+                    danger_line = debug_font.render(f"  {name}: {status}", True, color)
                     self.screen.blit(danger_line, (10, debug_y_offset))
-                    debug_y_offset += 20
+                    debug_y_offset += 18
                 
                 debug_y_offset += 5
-                food_text = font.render("Food Direction:", True, YELLOW)
+                food_text = debug_font.render("Food Direction:", True, YELLOW)
                 self.screen.blit(food_text, (10, debug_y_offset))
-                debug_y_offset += 25
+                debug_y_offset += 20
                 
                 food_items = [
                     ("Up", self.last_state_summary.get('food_up', 0)),
@@ -715,13 +726,13 @@ class SnakeGame:
                 for name, value in food_items:
                     color = GREEN if value > 0.5 else WHITE
                     status = "YES" if value > 0.5 else "No"
-                    food_line = font.render(f"  {name}: {status}", True, color)
+                    food_line = debug_font.render(f"  {name}: {status}", True, color)
                     self.screen.blit(food_line, (10, debug_y_offset))
-                    debug_y_offset += 20
+                    debug_y_offset += 18
             
-            # Debug mode indicator
-            debug_indicator = font.render("DEBUG MODE (Press G to toggle)", True, YELLOW)
-            self.screen.blit(debug_indicator, (SCREEN_WIDTH - 320, 10))
+            # Debug mode indicator - smaller font
+            debug_indicator = debug_font.render("DEBUG MODE (G to toggle)", True, YELLOW)
+            self.screen.blit(debug_indicator, (SCREEN_WIDTH - 240, 10))
         
         # Render pause message if game is paused
         if self.game_engine.paused:
@@ -730,6 +741,11 @@ class SnakeGame:
             pause_rect = pause_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
             self.screen.blit(pause_text, pause_rect)
     
+    def handle_game_over_input(self, key):
+        """Handle input in the game over state."""
+        if key in (K_RETURN, K_ESCAPE):
+            self.game_state = STATE_MENU
+
     def render_game_over(self):
         """Render the game over screen."""
         # First render the final game state
@@ -740,9 +756,15 @@ class SnakeGame:
         overlay.fill((0, 0, 0, 128))  # Semi-transparent black
         self.screen.blit(overlay, (0, 0))
         
+        # Check for perfect game (8960 points = filled grid)
+        is_perfect_game = self.game_engine.score >= 8960
+        
         # Game over message
         font_large = pygame.font.Font(None, 72)
-        game_over_text = font_large.render("GAME OVER", True, RED)
+        if is_perfect_game:
+            game_over_text = font_large.render("PERFECT GAME!", True, GOLD)
+        else:
+            game_over_text = font_large.render("GAME OVER", True, RED)
         game_over_rect = game_over_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50))
         self.screen.blit(game_over_text, game_over_rect)
         
@@ -759,18 +781,33 @@ class SnakeGame:
         highscore_rect = highscore_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 70))
         self.screen.blit(highscore_text, highscore_rect)
         
-        # New highscore message
-        if is_new_highscore and self.game_engine.score > 0:
+        # Perfect game or new highscore message
+        if is_perfect_game:
             font_new = pygame.font.Font(None, 36)
-            new_text = font_new.render("🎉 NEW HIGHSCORE! 🎉", True, GOLD)
+            perfect_text = font_new.render("Grid Completely Filled!", True, GOLD)
+            perfect_rect = perfect_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 120))
+            self.screen.blit(perfect_text, perfect_rect)
+        elif is_new_highscore and self.game_engine.score > 0:
+            font_new = pygame.font.Font(None, 36)
+            new_text = font_new.render("NEW HIGHSCORE!", True, GOLD)
             new_rect = new_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 120))
             self.screen.blit(new_text, new_rect)
         
-        # Continue message
-        font_small = pygame.font.Font(None, 36)
-        continue_text = font_small.render("Press ENTER or ESC to continue", True, YELLOW)
-        continue_rect = continue_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 160))
-        self.screen.blit(continue_text, continue_rect)
+        # Back to Menu button
+        button_font = pygame.font.Font(None, 40)
+        button_text = button_font.render("Back to Menu", True, BLACK)
+        button_width, button_height = 260, 60
+        button_x = (SCREEN_WIDTH - button_width) // 2
+        button_y = SCREEN_HEIGHT // 2 + 160
+        button_rect = pygame.Rect(button_x, button_y, button_width, button_height)
+        self.menu_button_rect = button_rect
+        # Draw button background
+        pygame.draw.rect(self.screen, YELLOW, button_rect, border_radius=12)
+        # Draw button text
+        text_rect = button_text.get_rect(center=button_rect.center)
+        self.screen.blit(button_text, text_rect)
+        # Draw border
+        pygame.draw.rect(self.screen, GOLD, button_rect, 3, border_radius=12)
     
     def run(self):
         """Start the game loop."""

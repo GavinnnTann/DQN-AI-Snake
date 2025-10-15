@@ -101,9 +101,10 @@ python play_snake.py
 1. **Manual Mode**: Full player control using WASD or arrow keys
 2. **A* Algorithm**: Watch optimal pathfinding in action
 3. **Dijkstra Algorithm**: Classic shortest-path algorithm demonstration
-4. **Q-Learning AI**: Traditional tabular reinforcement learning
-5. **DQN AI**: Deep Q-Network with 11-feature state representation
-6. **Enhanced DQN**: Advanced 34-feature DQN with:
+4. **Hamiltonian Cycle**: Guaranteed win strategy - visits every cell exactly once (see [HAMILTONIAN_ALGORITHM.md](HAMILTONIAN_ALGORITHM.md))
+5. **Q-Learning AI**: Traditional tabular reinforcement learning
+6. **DQN AI**: Deep Q-Network with 11-feature state representation
+7. **Enhanced DQN**: Advanced 34-feature DQN with:
    - A* reward shaping for guidance
    - Curriculum learning (4 stages: 25→60→120→250 score thresholds)
    - Trap detection and extended danger sensing

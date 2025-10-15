@@ -180,8 +180,8 @@ A: Yes! Load a checkpoint and keep training. Models saved every 100 episodes.
 **Problem: Training very slow**
 ```bash
 # Check if GPU is detected
-python -c "import torch; print(f'GPU: {torch.cuda.is_available()}')"
-
+python check_cude.py
+# Extensive CUDA version Mapping and automated installation
 # If False, install CUDA-enabled PyTorch
 # If True but still slow, reduce batch size in constants.py
 ```

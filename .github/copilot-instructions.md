@@ -8,7 +8,7 @@ Key entry points:
 
 Core components and responsibilities
 - `advanced_snake/game_engine.py`: game state, movement, collision detection, rendering hooks used by agents.
-- `advanced_snake/algorithms.py`: A* and Dijkstra implementations used as guidance / baselines.
+- `advanced_snake/algorithms.py`: A*, Dijkstra, and Hamiltonian Cycle implementations used as guidance / baselines / guaranteed-win strategies.
 - `advanced_snake/enhanced_dqn.py`: Enhanced DQN agent, curriculum logic, reward shaping and model save/load.
 - `advanced_snake/q_learning.py`: Tabular Q-learning agent (incompatible model format with DQN).
 - `advanced_snake/main.py`: glue code — menu, model browser, input mapping, loads agents and ensures compatibility with saved models.

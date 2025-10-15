@@ -40,7 +40,7 @@ PURPLE = (128, 0, 128)
 
 # Game settings
 INITIAL_SNAKE_LENGTH = 3
-FRAME_RATES = {"Slow": 5, "Medium": 10, "Fast": 15, "Very Fast": 100}
+FRAME_RATES = {"Slow": 5, "Medium": 10, "Fast": 15, "Very Fast": 200, "Max Speed": 1000}
 DEFAULT_SPEED = "Very Fast"
 GAME_TITLE = "Advanced Snake Game"
 
@@ -48,8 +48,10 @@ GAME_TITLE = "Advanced Snake Game"
 MANUAL_MODE = "Manual"
 ASTAR_MODE = "A* Algorithm"
 DIJKSTRA_MODE = "Dijkstra Algorithm"
-QLEARNING_MODE = "Q-Learning Algorithm"
-GAME_MODES = [MANUAL_MODE, ASTAR_MODE, DIJKSTRA_MODE, QLEARNING_MODE]
+HAMILTONIAN_MODE = "Hamiltonian Cycle"
+DHCR_MODE = "DHCR (Hamiltonian + Shortcuts)"
+QLEARNING_MODE = "Q-Learning"
+GAME_MODES = [MANUAL_MODE, ASTAR_MODE, DIJKSTRA_MODE, HAMILTONIAN_MODE, DHCR_MODE, QLEARNING_MODE]
 
 # Direction vectors (row, col)
 UP = (-1, 0)

@@ -1790,6 +1790,19 @@ class TrainingUI:
         log_inner = ttk.Frame(self.log_frame, padding=5)
         log_inner.pack(fill=tk.BOTH, expand=True)
         
+        # Add autoscroll toggle button at the top
+        log_controls = ttk.Frame(log_inner)
+        log_controls.pack(fill=tk.X, pady=(0, 5))
+        
+        self.autoscroll_var = tk.BooleanVar(value=True)  # Default to enabled
+        autoscroll_check = ttk.Checkbutton(
+            log_controls, 
+            text="Auto-scroll to newest", 
+            variable=self.autoscroll_var,
+            style='TCheckbutton'
+        )
+        autoscroll_check.pack(side=tk.LEFT)
+        
         # Add scrollbar
         log_scroll = ttk.Scrollbar(log_inner)
         log_scroll.pack(side=tk.RIGHT, fill=tk.Y)
@@ -3124,8 +3137,14 @@ class TrainingUI:
             if is_status and log_type == "training":
                 self.last_status_position = log_widget.index(tk.END + "-1line")
         
-        # Auto-scroll to bottom and disable editing
-        log_widget.see(tk.END)
+        # Auto-scroll to bottom only if autoscroll is enabled
+        if log_type == "training" and hasattr(self, 'autoscroll_var'):
+            if self.autoscroll_var.get():
+                log_widget.see(tk.END)
+        else:
+            # For system log, always autoscroll
+            log_widget.see(tk.END)
+        
         log_widget.config(state=tk.DISABLED)
 
     def update_memory_usage(self):

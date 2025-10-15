@@ -15,18 +15,39 @@ class GameEngine:
         """Initialize the game engine."""
         self.reset_game()
     
-    def reset_game(self):
-        """Reset the game state."""
-        # Initialize snake in the middle of the grid
+    def reset_game(self, start_position=None, start_direction=None):
+        """
+        Reset the game state.
+        
+        Args:
+            start_position: Optional (row, col) tuple for snake head starting position
+            start_direction: Optional direction tuple (UP, DOWN, LEFT, RIGHT)
+        """
+        # Initialize snake
         self.snake = deque()
-        start_row, start_col = GRID_HEIGHT // 2, GRID_WIDTH // 2
         
-        # Create initial snake body (3 segments)
+        # Use custom start position or default to middle
+        if start_position:
+            start_row, start_col = start_position
+        else:
+            start_row, start_col = GRID_HEIGHT // 2, GRID_WIDTH // 2
+        
+        # Use custom direction or default to RIGHT
+        if start_direction:
+            initial_direction = start_direction
+        else:
+            initial_direction = RIGHT
+        
+        # Create initial snake body (3 segments) going backwards from head
+        # The head is at start position, body extends in opposite direction
+        direction_offset = (-initial_direction[0], -initial_direction[1])
         for i in range(INITIAL_SNAKE_LENGTH):
-            self.snake.append((start_row, start_col - i))
+            segment_row = start_row + direction_offset[0] * i
+            segment_col = start_col + direction_offset[1] * i
+            self.snake.append((segment_row, segment_col))
         
-        # Set initial direction (right)
-        self.direction = RIGHT
+        # Set initial direction
+        self.direction = initial_direction
         self.next_direction = self.direction  # Store next direction to prevent 180-degree turns
         
         # Game state variables
@@ -76,9 +97,22 @@ class GameEngine:
         new_head = (new_row, new_col)
         
         # Check for collision with self (game over condition)
-        if new_head in self.snake:
-            self.game_over = True
-            return
+        # We need to check if the new head collides with the body, but we should
+        # exclude the tail since it will move away (unless we're about to eat food)
+        # First, check if we're about to eat food
+        will_eat_food = (new_head == self.food)
+        
+        # If we're not eating food, the tail will move, so exclude it from collision check
+        if will_eat_food:
+            # Tail won't move, check entire snake body
+            if new_head in self.snake:
+                self.game_over = True
+                return
+        else:
+            # Tail will move, check all except tail
+            if new_head in list(self.snake)[:-1]:
+                self.game_over = True
+                return
         
         # Add new head to the snake
         self.snake.appendleft(new_head)
@@ -87,6 +121,17 @@ class GameEngine:
         if new_head == self.food:
             # Snake grows, generate new food, increase score
             self.score += POINTS_PER_FOOD
+            
+            # Check for win condition (score 8960 = 896 food × 10 points)
+            # This means snake has grown to 899 cells (3 initial + 896 food)
+            # On a 30×30 grid (900 cells), only 1 cell remains
+            if self.score >= 8960:
+                self.game_over = True
+                print("\n🎉 PERFECT GAME! Snake filled the entire grid!")
+                print(f"Final Score: {self.score}")
+                print(f"Snake Length: {len(self.snake)}")
+                return
+            
             self.food = self.generate_food()
         else:
             # Remove the tail if no food was eaten
