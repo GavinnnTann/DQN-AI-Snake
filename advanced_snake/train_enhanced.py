@@ -53,6 +53,13 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
     
     game_engine = GameEngine()
     agent = EnhancedDQNAgent(game_engine)
+
+    # Train in SHIELD mode, not the cycle backbone. The backbone plays a full
+    # ~200k-step winning game every episode (infeasible to train on) and it
+    # guarantees the win regardless of the network anyway. Training instead
+    # sharpens the network's food-seeking (used at play time both for the
+    # non-guaranteed "pure shield" mode and to pick among safe backbone shortcuts).
+    agent.use_cycle_backbone = False
     
     # Track starting episode for continuation
     start_episode = 1
@@ -177,41 +184,58 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
             print(f"\n[LEARNING RATE DECAY] Episode {episode}: {old_lr:.6f} -> {new_lr:.6f}")
         
         game_engine.reset_game()
+        agent.on_new_game()   # reset shield state + align snake to cycle (win backbone)
         state = agent.get_state()
         episode_reward = 0
         steps = 0
+        steps_since_food = 0
         episode_start = time.time()
         old_score = 0
-        
+
+        # Starvation limit: with the survival shield the snake can live almost
+        # indefinitely, so we no longer cap TOTAL steps (that was a hard score
+        # ceiling). Instead we end the episode only if it goes too long WITHOUT
+        # eating, which means it is genuinely looping. Scale generously so the
+        # endgame (where reaching food can require traversing most of the board)
+        # is not cut short.
+        area = GRID_WIDTH * GRID_HEIGHT
+        starvation_limit = 2 * area
+
         while not game_engine.game_over:
             # Get old distance to food
             head = game_engine.snake[0]
             food = game_engine.food
             old_distance = abs(head[0] - food[0]) + abs(head[1] - food[1])
-            
-            # Select and perform action
+
+            # Select and perform action (shielded)
             action = agent.select_action(state, training=True)
             agent.perform_action(action)
-            
+
             # Get new state and reward
             new_state = agent.get_state()
             new_distance = abs(game_engine.snake[0][0] - food[0]) + abs(game_engine.snake[0][1] - food[1])
-            reward = agent.calculate_reward(old_score, game_engine.game_over, old_distance, new_distance)
-            
+            reward = agent.calculate_reward_shielded(old_score, game_engine.game_over, old_distance, new_distance)
+
             # Store transition
             agent.memory.add(state, action, reward, new_state, game_engine.game_over)
-            
+
             # Train the agent
             loss = agent.optimize_model()
-            
+
+            # Track starvation (steps since last food)
+            if game_engine.score > old_score:
+                steps_since_food = 0
+            else:
+                steps_since_food += 1
+
             # Update state
             state = new_state
             old_score = game_engine.score
             episode_reward += reward
             steps += 1
-            
-            # Prevent infinite loops
-            if steps > 1000:
+
+            # End only on genuine looping (no food for a long time)
+            if steps_since_food > starvation_limit:
                 break
         
         # Episode finished

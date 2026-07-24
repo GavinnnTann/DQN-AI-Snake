@@ -53,6 +53,7 @@ class GameEngine:
         # Game state variables
         self.score = 0
         self.game_over = False
+        self.won = False
         self.paused = False
         
         # Generate initial food
@@ -122,16 +123,19 @@ class GameEngine:
             # Snake grows, generate new food, increase score
             self.score += POINTS_PER_FOOD
             
-            # Check for win condition (score 8960 = 896 food × 10 points)
-            # This means snake has grown to 899 cells (3 initial + 896 food)
-            # On a 30×30 grid (900 cells), only 1 cell remains
-            if self.score >= 8960:
+            # Win condition (grid-agnostic): the board is full when only one cell
+            # remains empty (the snake occupies every other cell). Detecting this
+            # here also avoids generate_food() looping forever with no empty cell.
+            if len(self.snake) >= GRID_WIDTH * GRID_HEIGHT - 1:
                 self.game_over = True
-                print("\n🎉 PERFECT GAME! Snake filled the entire grid!")
+                self.won = True
+                # NOTE: plain ASCII only - an emoji here crashes the Windows
+                # (cp1252) console at the exact moment of winning.
+                print("\n*** PERFECT GAME! Snake filled the entire grid! ***")
                 print(f"Final Score: {self.score}")
                 print(f"Snake Length: {len(self.snake)}")
                 return
-            
+
             self.food = self.generate_food()
         else:
             # Remove the tail if no food was eaten

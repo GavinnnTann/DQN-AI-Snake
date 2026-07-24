@@ -403,7 +403,16 @@ class SnakeGame:
         """Reset the game state."""
         # Normal reset for all modes
         self.game_engine.reset_game()
-        
+
+        # Reset DHCR committed path state to prevent stale paths
+        self.algorithms.reset_dhcr_state()
+
+        # DQN mode: reset the shield and (if the cycle backbone is on) align the
+        # fresh snake onto the Hamiltonian cycle so play is a guaranteed win.
+        if (self.current_mode == DQN_MODE and self.dqn_agent is not None
+                and hasattr(self.dqn_agent, 'on_new_game')):
+            self.dqn_agent.on_new_game()
+
         # If we're in a game, ensure the state is playing
         if self.game_state != STATE_MENU:
             self.game_state = STATE_PLAYING
@@ -507,27 +516,19 @@ class SnakeGame:
             elif self.current_mode == DQN_MODE and self.dqn_agent is not None:
                 # Advanced DQN algorithm mode
                 # Use agent's own get_state() which returns correct feature count (34 for Enhanced, 11 for old)
-                state = self.dqn_agent.get_state()
-                
-                # Get Q-values for debugging
-                with torch.no_grad():
-                    q_values = self.dqn_agent.policy_net(state.unsqueeze(0))
-                    self.last_q_values = q_values.squeeze().cpu().tolist()
-                
-                action_idx = self.dqn_agent.select_action(state, training=False)
+                # Lazy shielded/backbone action selection (Path A). The state (A*)
+                # and Q-values are computed only when the controller needs them to
+                # disambiguate, so a guaranteed-win backbone game stays fast.
+                if hasattr(self.dqn_agent, 'act'):
+                    action_idx, qvals = self.dqn_agent.act(training=False)
+                    if qvals is not None:
+                        self.last_q_values = qvals
+                else:
+                    state = self.dqn_agent.get_state()
+                    self.last_q_values = self.dqn_agent.get_q_values(state).cpu().tolist()
+                    action_idx = self.dqn_agent.select_action(state, training=False)
                 self.last_action = action_idx
-                
-                # Store state summary for debugging
-                self.last_state_summary = {
-                    'danger_straight': state[0].item(),
-                    'danger_right': state[1].item(),
-                    'danger_left': state[2].item(),
-                    'food_up': state[3].item(),
-                    'food_down': state[4].item(),
-                    'food_left': state[5].item(),
-                    'food_right': state[6].item(),
-                }
-                
+
                 # Convert relative action to absolute direction
                 # TRAINING MAPPING: 0=turn right, 1=straight, 2=turn left
                 direction = self.convert_relative_to_absolute_direction(action_idx)

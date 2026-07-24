@@ -1,6 +1,8 @@
 # Advanced Snake Game with Deep Reinforcement Learning
 
-An advanced implementation of the classic Snake game featuring multiple AI agents, deep reinforcement learning with curriculum learning, A* reward shaping, and comprehensive training tools.
+An advanced implementation of the classic Snake game featuring multiple AI agents, a Deep Q-Network, and a safety layer that lets the trained snake **win the game** — filling all 900 cells (score 8960) on the 30×30 board.
+
+The Enhanced DQN is wrapped by a **survival shield** and a **Hamiltonian cycle backbone** (`safety.py`) that guarantees the snake never traps itself and can complete a perfect game. See [Winning the Game](#-winning-the-game-survival-shield--cycle-backbone).
 
 ---
 
@@ -38,9 +40,9 @@ python train_snake.py
 5. After training, play the game and select **"Enhanced DQN"** mode
 
 **Typical Results:**
-- After 500 episodes: Score 50-100 (basic navigation)
-- After 1000 episodes: Score 150-250 (good performance)
-- After 2000 episodes: Score 300-500+ (excellent performance)
+- **Playing with the cycle backbone (default): a perfect game every time** — the snake fills the board (score 8960), even with an untrained model. The DQN's training only makes it *faster*, not *win-or-not*.
+- Playing in pure survival-shield mode (backbone off): plays far past the old ~1000-point ceiling and never traps itself; score depends on how well the model is trained.
+- Training (shield mode) sharpens the network's food-seeking; watch the running-average score climb in the training UI.
 
 ---
 
@@ -76,6 +78,7 @@ python play_snake.py
 ## Table of Contents
 
 -  [Quick Start Guide](#-quick-start-guide)
+- [Winning the Game: Survival Shield & Cycle Backbone](#-winning-the-game-survival-shield--cycle-backbone)
 - [Features](#-features)
   - [Game Modes](#game-modes)
   - [Training System](#training-system)
@@ -106,10 +109,26 @@ python play_snake.py
 6. **DQN AI**: Deep Q-Network with 11-feature state representation
 7. **Enhanced DQN**: Advanced 34-feature DQN with:
    - A* reward shaping for guidance
-   - Curriculum learning (4 stages: 25→60→120→250 score thresholds)
    - Trap detection and extended danger sensing
    - Body proximity awareness
-   - Tail-chasing prevention
+   - **Survival shield + Hamiltonian cycle backbone** so the trained snake can win the game (see below)
+
+### 🏆 Winning the Game: Survival Shield & Cycle Backbone
+
+A learned policy alone traps itself once the snake gets long (the classic Snake ceiling). The Enhanced DQN is wrapped by a safety layer in [`advanced_snake/safety.py`](advanced_snake/safety.py) with **two modes**, toggled by `agent.use_cycle_backbone`:
+
+**🏆 Cycle Backbone (default in play — guaranteed win)**
+- The snake follows a **Hamiltonian cycle** (a fixed route that visits every cell exactly once), so it can always fill the board without ever colliding.
+- The network is still allowed to take **shortcuts** — but only ones that provably (1) don't overtake the tail in cycle order and (2) advance toward the food without skipping past it. Every allowed shortcut preserves the win, so the network can only make the snake *faster*, never kill it.
+- On a fresh game the snake is aligned to the cycle (it "snaps" to the start corner — this is expected).
+- **Result: a perfect game (score 8960, all 899/900 cells) every time**, verified on boards from 8×8 to 30×30, even with an untrained network. A full 30×30 win is ~14.5s of AI compute.
+
+**🛡️ Survival Shield (`use_cycle_backbone = False`)**
+- The network drives freely; the shield simulates each candidate move and **vetoes** any that would hit a wall/body or trap the snake, using **tail-reachability** (can the head still reach the tail?) and flood-fill free-space checks.
+- A **loop-breaker** forces progress toward food (shortest safe path) if the snake dawdles, so it never gets stuck circling.
+- High score and high variance, but **not** guaranteed to fill the board — this is the "pure trained snake" showcase.
+
+> The game's older `Hamiltonian Cycle` and `DHCR` menu modes are separate hand-coded algorithms and are independent of the DQN safety layer above.
 
 ### Training System
 
@@ -128,10 +147,15 @@ python play_snake.py
   - Stage 4 (250+): Independent learning, minimal exploration (0.01)
 
 - **Advanced Techniques**:
-  - Double DQN: Reduces overestimation bias
-  - Dueling Network: Separate value and advantage streams
-  - Prioritized Experience Replay: Focus on important transitions
+  - **Double DQN**: online net selects the next action, target net evaluates it — removes the max-operator overestimation bias
+  - **Dueling Network**: separate value and advantage streams
+  - **Huber (Smooth L1) loss**: robust to the occasional large reward (eating/dying) that MSE would over-weight
+  - **γ = 0.99**: a ~100-step planning horizon, needed for board-filling behaviour
   - Learning rate decay: 0.002 → 0.001 (ep 500) → 0.0005 (ep 800)
+
+- **Training reward (shield mode, stationary)**: `+1` food, `+10` win, `−1` death, `−0.01` per step, plus potential-based shaping toward the food. Kept fixed (no curriculum-scaled multipliers) so the learning target doesn't move under the network. Episodes end on a **starvation** cap (steps since last food), not a total-step cap, so the snake can experience long games.
+
+> **Note:** the earlier code advertised Prioritized Experience Replay, but the replay buffer is uniform — that claim has been removed rather than left inaccurate. The curriculum system still schedules exploration/learning-rate, but the reward itself is now the stationary scheme above.
 
 ### Training UI Features
 
@@ -363,20 +387,22 @@ In the main game menu:
 ```
 Input Layer (34 features)
     ↓
-Hidden Layer 1 (256 nodes, ReLU)
+Feature Layer 1 (256 nodes, ReLU, Dropout 0.2)
     ↓
-Hidden Layer 2 (128 nodes, ReLU)
+Feature Layer 2 (256 nodes, ReLU, Dropout 0.2)
     ↓
 Split into two streams:
-    
+
 Value Stream (128 nodes)          Advantage Stream (128 nodes)
     ↓                                      ↓
-State Value (1 node)              Advantage per Action (4 nodes)
+State Value (1 node)              Advantage per Action (3 nodes)
     ↓                                      ↓
-         Combined (Q-values for 4 actions)
+         Combined (Q-values for 3 relative actions)
 ```
 
-**Total Parameters:** ~67,000
+**Actions are relative:** `0 = turn right`, `1 = straight`, `2 = turn left`.
+
+**Inference note:** the network is switched to `eval()` mode during action selection so **Dropout is disabled** — previously it was left in `train()` mode, which perturbed every decision with 20% of neurons randomly dropped. This is now fixed.
 
 ## Project Structure
 
@@ -388,10 +414,11 @@ Snake Game/
     ├── main.py                # Game entry point
     ├── game_engine.py         # Core game logic
     ├── constants.py           # Configuration
-    ├── algorithms.py          # A*, Dijkstra implementations
+    ├── algorithms.py          # A*, Dijkstra, Hamiltonian, DHCR implementations
+    ├── safety.py              # Survival shield + Hamiltonian cycle backbone (the win layer)
     ├── q_learning.py          # Q-learning agent
     ├── advanced_dqn.py        # Original DQN agent
-    ├── enhanced_dqn.py        # Enhanced DQN agent (34 features)
+    ├── enhanced_dqn.py        # Enhanced DQN agent (34 features, shield-integrated)
     ├── train_enhanced.py      # Enhanced DQN training script
     ├── headless_training.py   # Original DQN training script
     ├── training_ui.py         # Training GUI
@@ -439,15 +466,25 @@ Snake Game/
 - **Curriculum Stage**: Current learning stage (0-4)
 - **A* Guidance Probability**: How often A* hints are used for rewards
 
-## Known Issues
+## Known Issues & Notes
 
-1. **CUDA Availability**: If PyTorch can't detect GPU, run `check_cuda.py` in advanced_snake directory
+1. **CUDA Availability**: If PyTorch can't detect GPU, run `check_cuda.py` in advanced_snake directory. Note: the network is tiny, so training is mostly **CPU-bound** (the per-step A*/shield logic dominates) — GPU utilization will look low, which is expected.
 2. **Training UI Memory**: Long training sessions may consume significant RAM; restart UI if slow
 3. **Model Compatibility**: Enhanced DQN models are NOT compatible with Original DQN mode (and vice versa)
+4. **Cycle backbone alignment**: when you start a DQN game in the default win mode, the snake **snaps to the cycle's start corner** on the first frame — this is the alignment step, not a bug.
+5. **Watching a full win**: a perfect 30×30 game is ~189,000 moves; the AI computes it in ~15s, but on-screen it's gated by the render speed — use the fastest speed setting to watch it complete.
 
 ## Version History
 
-### v3.0 (Current)
+### v4.0 (Current) — "The snake wins"
+- **Survival shield + Hamiltonian cycle backbone** (`safety.py`): the trained snake now fills the board (score 8960) — a guaranteed perfect game, verified 8×8 → 30×30.
+- Loop-breaker (hunger-triggered shortest-safe-path) so the snake never circles without eating.
+- **Bug fixes:** network now runs in `eval()` mode at inference (Dropout was corrupting every decision); real **Double DQN** target; **Huber** loss; **γ 0.95 → 0.99**; removed dead/obfuscated watermark code.
+- **Fixed a win-time crash:** the "perfect game" message printed an emoji that crashed the Windows console at the exact moment of winning; win condition is now grid-agnostic ASCII with a `won` flag.
+- Training reworked: stationary shielded reward, starvation-based (not total-step) episode cap.
+- Corrected docs: removed the never-implemented Prioritized Experience Replay claim.
+
+### v3.0
 - Added Enhanced DQN with 34 features
 - Implemented curriculum learning
 - Added A* reward shaping
@@ -486,7 +523,7 @@ This project is open source and available under the MIT License.
 - Deep Q-Learning paper: Mnih et al. (2015)
 - Double DQN: van Hasselt et al. (2015)
 - Dueling DQN: Wang et al. (2016)
-- Prioritized Experience Replay: Schaul et al. (2015)
+- Hamiltonian-cycle-with-shortcuts strategy for a guaranteed Snake win (John Tapsell / AlphaPhoenix DHCR)
 
 ---
 

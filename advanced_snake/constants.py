@@ -40,7 +40,7 @@ PURPLE = (128, 0, 128)
 
 # Game settings
 INITIAL_SNAKE_LENGTH = 3
-FRAME_RATES = {"Slow": 5, "Medium": 10, "Fast": 15, "Very Fast": 200, "Max Speed": 1000}
+FRAME_RATES = {"Slow": 5, "Medium": 10, "Fast": 15, "Very Fast": 200, "Max Speed": 100000}
 DEFAULT_SPEED = "Very Fast"
 GAME_TITLE = "Advanced Snake Game"
 

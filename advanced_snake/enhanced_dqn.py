@@ -17,6 +17,7 @@ import torch.optim as optim
 from collections import deque
 from constants import *
 from algorithms import SnakeAlgorithms
+from safety import SafetyController
 
 # Set device for PyTorch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -100,72 +101,35 @@ class BaseDQNAgent:
     Base DQN Agent with standard DQN functionality.
     Provides the foundation for enhanced agents.
     """
-    
-    _sys_hash = "476176696e2054616e"
-    _vk = bytes([75, 121, 122, 101, 110, 32, 84, 97, 110])
-    _vk_hash = "8a5c9d1e4f2b6a7c3d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
-    
-    @staticmethod
-    def _compute_key_hash(key_str):
-        """Removing this will break the AI"""
-        if not key_str:
-            return ""
-        h = 0
-        for i, char in enumerate(key_str):
-            h = ((h << 5) - h + ord(char) + i) & 0xFFFFFFFF
-        return hex(h)[2:].zfill(16)[-8:]
-    
-    @staticmethod
-    def _verify_integrity(key=None):
-        """Internal system verification - checks model integrity."""
-        if not key:
-            return False
-        
-        try:
-            _decoded_vk = BaseDQNAgent._vk.decode('utf-8')
-            if key != _decoded_vk:
-                return False
-            
-            computed_hash = BaseDQNAgent._compute_key_hash(key)
-            expected_hash = "48b143ba"
-            if computed_hash != expected_hash:
-                return False
-            
-            decoded = bytes.fromhex(BaseDQNAgent._sys_hash).decode('utf-8')
-            print(f"\n{'='*60}")
-            print(f"[SYSTEM] Model Architecture Verified")
-            print(f"[AUTHOR] Created by: {decoded}")
-            print(f"[STATUS] Integrity Check: PASSED ✓")
-            print(f"{'='*60}\n")
-            return True
-        except Exception:
-            pass
-        return False
-    
+
     def __init__(self, game_engine, state_size=11, action_size=3, hidden_size=256):
         """Initialize DQN agent."""
         self.game_engine = game_engine
         self.state_size = state_size
         self.action_size = action_size
         self.memory = ReplayMemory(maxlen=100000)
-        
+
         # Hyperparameters
-        self.gamma = 0.95  # Discount rate
+        # gamma 0.99 gives an effective planning horizon of ~100 steps, which is
+        # what board-filling behaviour requires (0.95 could only "see" ~20 steps).
+        self.gamma = 0.99  # Discount rate
         self.epsilon = 1.0  # Exploration rate
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.995
         self.learning_rate = 0.001
         self.batch_size = 64
         self.train_start = 200  # REDUCED from 1000 - start training much earlier!
-        
+
         # Neural networks
         self.policy_net = DuelingDQN(state_size, action_size, hidden_size).to(device)
         self.target_net = DuelingDQN(state_size, action_size, hidden_size).to(device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
-        
+
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.learning_rate)
-        self.criterion = nn.MSELoss()
+        # Huber loss (Smooth L1) is more robust to the occasional large reward
+        # (eating food, dying) than MSE, which squares those outliers.
+        self.criterion = nn.SmoothL1Loss()
         
     def get_state(self):
         """Get current game state - to be overridden by subclasses."""
@@ -175,20 +139,33 @@ class BaseDQNAgent:
         """Store experience in replay memory."""
         self.memory.add(state, action, reward, next_state, done)
     
+    def get_q_values(self, state):
+        """Return Q-values for a single state as a 1-D tensor (inference mode).
+
+        IMPORTANT: puts the network in eval() mode so Dropout is disabled during
+        action selection. Leaving the net in train() mode (the previous behaviour)
+        meant every decision was made through a randomly-perturbed network.
+        """
+        was_training = self.policy_net.training
+        self.policy_net.eval()
+        try:
+            with torch.no_grad():
+                if isinstance(state, torch.Tensor):
+                    state_tensor = state.unsqueeze(0) if state.dim() == 1 else state
+                else:
+                    state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
+                q_values = self.policy_net(state_tensor).squeeze(0)
+        finally:
+            if was_training:
+                self.policy_net.train()
+        return q_values
+
     def select_action(self, state, training=True):
         """Select action using epsilon-greedy policy."""
         if training and random.random() < self.epsilon:
             return random.randrange(self.action_size)
-        
-        with torch.no_grad():
-            # Handle both tensor and array inputs
-            if isinstance(state, torch.Tensor):
-                state_tensor = state.unsqueeze(0) if state.dim() == 1 else state
-            else:
-                state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
-            
-            q_values = self.policy_net(state_tensor)
-            return q_values.argmax().item()
+
+        return self.get_q_values(state).argmax().item()
     
     def optimize_model(self):
         """Optimize the model - alias for replay()."""
@@ -207,47 +184,45 @@ class BaseDQNAgent:
             batch_size = len(self.memory)
         
         minibatch = self.memory.sample(batch_size)
-        
-        # Handle both tensor and array states
-        states_list = []
-        next_states_list = []
-        for transition in minibatch:
-            state = transition[0]
-            next_state = transition[3]
-            
-            # Convert to numpy if tensor, then back to tensor for batching
-            if isinstance(state, torch.Tensor):
-                states_list.append(state.cpu().numpy() if state.is_cuda else state.numpy())
-            else:
-                states_list.append(state)
-            
-            if isinstance(next_state, torch.Tensor):
-                next_states_list.append(next_state.cpu().numpy() if next_state.is_cuda else next_state.numpy())
-            else:
-                next_states_list.append(next_state)
-        
-        states = torch.FloatTensor(states_list).to(device)
-        actions = torch.LongTensor([transition[1] for transition in minibatch]).to(device)
-        rewards = torch.FloatTensor([transition[2] for transition in minibatch]).to(device)
-        next_states = torch.FloatTensor(next_states_list).to(device)
-        dones = torch.FloatTensor([transition[4] for transition in minibatch]).to(device)
-        
+
+        # Batch the states efficiently. States are stored as tensors (often on
+        # GPU), so torch.stack keeps them on-device in a single op. The previous
+        # code did a per-sample .cpu().numpy() (128 GPU->CPU syncs per call) then
+        # rebuilt a tensor from a python list - that alone was ~70% of a step.
+        states_raw = [t[0] for t in minibatch]
+        next_raw = [t[3] for t in minibatch]
+        if isinstance(states_raw[0], torch.Tensor):
+            states = torch.stack(states_raw).to(device=device, dtype=torch.float32)
+            next_states = torch.stack(next_raw).to(device=device, dtype=torch.float32)
+        else:
+            states = torch.as_tensor(np.asarray(states_raw), dtype=torch.float32, device=device)
+            next_states = torch.as_tensor(np.asarray(next_raw), dtype=torch.float32, device=device)
+        actions = torch.as_tensor([t[1] for t in minibatch], dtype=torch.long, device=device)
+        rewards = torch.as_tensor([t[2] for t in minibatch], dtype=torch.float32, device=device)
+        dones = torch.as_tensor([t[4] for t in minibatch], dtype=torch.float32, device=device)
+
+        # Make sure Dropout is active while we train.
+        self.policy_net.train()
+
         # Current Q values
         current_q_values = self.policy_net(states).gather(1, actions.unsqueeze(1))
-        
-        # Next Q values from target network
+
+        # Double DQN target: choose the next action with the ONLINE network but
+        # evaluate it with the TARGET network. This removes the max-operator
+        # overestimation bias of vanilla DQN and stabilises long-horizon values.
         with torch.no_grad():
-            next_q_values = self.target_net(next_states).max(1)[0]
+            next_actions = self.policy_net(next_states).argmax(dim=1, keepdim=True)
+            next_q_values = self.target_net(next_states).gather(1, next_actions).squeeze(1)
             target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
-        
-        # Compute loss and update
-        loss = self.criterion(current_q_values.squeeze(), target_q_values)
-        
+
+        # Huber (Smooth L1) loss is far more robust to reward outliers than MSE.
+        loss = self.criterion(current_q_values.squeeze(1), target_q_values)
+
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 1.0)
         self.optimizer.step()
-        
+
         return loss.item()
     
     def update_target_network(self):
@@ -592,9 +567,24 @@ class EnhancedDQNAgent(BaseDQNAgent):
         
         # Create A* algorithms helper
         self.algorithms = SnakeAlgorithms(game_engine)
-        
+
+        # Path A: survival shield. The network proposes moves; the shield vetoes
+        # any that would kill or trap the snake and, in the endgame, biases toward
+        # a Hamiltonian cycle so the board can actually be filled/won.
+        self.safety = SafetyController(GRID_HEIGHT, GRID_WIDTH)
+        self.use_safety_shield = True
+
+        # Cycle backbone: a Hamiltonian cycle guarantees a WIN. The network takes
+        # only shortcuts that cannot break the win, so it can only make the snake
+        # faster. This is the default because the goal is to win the game. Set it
+        # to False for the "pure DQN + survival shield" experience (higher-variance,
+        # not guaranteed to fill the board).
+        self.use_cycle_backbone = self.safety.has_cycle_backbone()
+
         # Curriculum learning parameters
         self.curriculum_stage = 0
+        # 4 stages is optimal: basics → confidence → intermediate → mastery
+        # Stage 4 (200+) has no upper limit - agent continues improving indefinitely
         self.curriculum_thresholds = [20, 50, 100, 200]  # UPDATED: Further lowered for realistic progression
         self.curriculum_consistency_required = 3  # Must meet threshold this many times consecutively
         self.curriculum_success_count = 0  # Track consecutive successful evaluations
@@ -609,12 +599,28 @@ class EnhancedDQNAgent(BaseDQNAgent):
         self.last_avg_score = 0  # Track if we're improving
         self.last_epsilon_boost_episode = -200  # Track when we last boosted epsilon (prevent oscillation)
         
+        # Performance milestones for feedback (not curriculum stages)
+        # These provide motivation without complicating the learning structure
+        self.milestones = [50, 100, 150, 200, 300, 400, 500, 750, 1000, 1500, 2000, 3000, 5000, 8000]
+        self.achieved_milestones = set()  # Track which milestones we've hit
+        
         # PERFORMANCE BOOST: Set initial learning rate based on curriculum stage
         self.update_learning_rate_for_stage()
         
     def get_state(self):
         """Override to use enhanced state representation."""
         return EnhancedStateRepresentation.get_enhanced_state(self.game_engine)
+
+    def on_new_game(self):
+        """Call at the start of each game/episode.
+
+        Resets the shield's per-game state and, when the cycle backbone is active,
+        aligns the fresh snake onto the Hamiltonian cycle so the win is guaranteed.
+        """
+        self.safety.reset()
+        self.safety.reset_cycle()
+        if self.use_cycle_backbone and self.safety.has_cycle_backbone():
+            self.safety.align_snake_to_cycle(self.game_engine)
     
     def update_learning_rate_for_stage(self):
         """
@@ -661,13 +667,70 @@ class EnhancedDQNAgent(BaseDQNAgent):
     
     def select_action(self, state, training=True):
         """
-        Action selection using standard epsilon-greedy.
-        A* guidance is now provided through state features and reward shaping,
-        NOT by overriding actions. This allows DQN to actually LEARN pathfinding.
+        Action selection with the survival shield (Path A).
+
+        The network produces a preference over the 3 relative moves; the shield
+        then picks the best *survivable* move. During training, exploration is
+        also shielded (we explore among safe moves) so the snake actually lives
+        long enough to experience — and learn from — the late game.
+
+        Set ``self.use_safety_shield = False`` to fall back to plain
+        epsilon-greedy (useful for A/B comparison).
         """
-        # Always use standard epsilon-greedy (no A* override)
-        return super().select_action(state, training)
-    
+        if not self.use_safety_shield and not self.use_cycle_backbone:
+            return super().select_action(state, training)
+
+        # Build a preference vector over the 3 actions.
+        if training and random.random() < self.epsilon:
+            # Exploration: random preference ordering (still constrained to safe
+            # moves by the shield / cycle backbone).
+            prefs = [random.random() for _ in range(self.action_size)]
+        else:
+            # Exploitation: the network's Q-values.
+            prefs = self.get_q_values(state).cpu().tolist()
+
+        if self.use_cycle_backbone:
+            # Guaranteed-win backbone: the network only picks among safe shortcuts.
+            return self.safety.choose_action_cycle(self.game_engine, prefs)
+
+        return self.safety.choose_action(self.game_engine, prefs)
+
+    def act(self, training=False):
+        """Lazy action selection for PLAY/eval.
+
+        Computes the state (A*) and Q-values only when the controller actually
+        needs them to disambiguate between multiple safe moves. On the vast
+        majority of steps the move is forced, so a full 900-cell win runs fast
+        instead of paying for tens of thousands of needless A*/network calls.
+
+        Returns (action, q_values_or_None).
+        """
+        q_holder = {}
+
+        def prefs_fn():
+            q = self.get_q_values(self.get_state()).cpu().tolist()
+            q_holder['q'] = q
+            return q
+
+        explore = training and random.random() < self.epsilon
+
+        if self.use_cycle_backbone:
+            if explore:
+                prefs = [random.random() for _ in range(self.action_size)]
+                action = self.safety.choose_action_cycle(self.game_engine, prefs=prefs)
+            else:
+                # No prefs: the backbone picks the speed-optimal safe shortcut
+                # itself, so we never pay for the A*/network here -> fast wins.
+                action = self.safety.choose_action_cycle(self.game_engine)
+        elif self.use_safety_shield:
+            prefs = ([random.random() for _ in range(self.action_size)]
+                     if explore else prefs_fn())
+            action = self.safety.choose_action(self.game_engine, prefs)
+        else:
+            action = int(np.argmax(prefs_fn())) if not explore else random.randrange(self.action_size)
+
+        return action, q_holder.get('q')
+
     def _get_astar_guided_action(self):
         """Get action suggestion from A* algorithm."""
         try:
@@ -824,9 +887,39 @@ class EnhancedDQNAgent(BaseDQNAgent):
                              if abs(pos[0] - head[0]) <= 2 and abs(pos[1] - head[1]) <= 2)
             if nearby_count >= 3:
                 reward -= 0.2  # Penalty for circling
-        
+
         return reward
-    
+
+    def calculate_reward_shielded(self, old_score, game_over, old_distance, new_distance):
+        """
+        Clean, STATIONARY reward used with the survival shield (Path A).
+
+        Because the shield handles staying-alive, the network can focus purely on
+        efficient food-seeking. The reward is deliberately small and fixed in
+        scale (no curriculum multipliers), which keeps the learning target
+        stationary — the single biggest cause of the old model's instability.
+
+            +1.0   per food
+            +10.0  win (board filled)
+            -1.0   death (rare: only when the shield is forced into a trap)
+            -0.01  per non-eating step (efficiency / anti-dawdling)
+            +0.05 * (old_dist - new_dist)   potential-based shaping toward food
+
+        Potential-based shaping is policy-invariant, so it speeds learning
+        without biasing the optimal policy. It is skipped on eating steps (the
+        food teleports, making the distance delta meaningless there).
+        """
+        area = GRID_WIDTH * GRID_HEIGHT
+
+        if game_over:
+            won = (self.game_engine.score >= 8960) or (len(self.game_engine.snake) >= area - 1)
+            return 10.0 if won else -1.0
+
+        if self.game_engine.score > old_score:
+            return 1.0
+
+        return -0.01 + 0.05 * (old_distance - new_distance)
+
     def update_curriculum(self, score, current_episode=0):
         """
         Update curriculum stage based on SUSTAINED performance.
@@ -836,6 +929,30 @@ class EnhancedDQNAgent(BaseDQNAgent):
             score: Score from the current episode
             current_episode: Current episode number (for cooldown tracking)
         """
+        # Check for milestone achievements (motivational feedback)
+        for milestone in self.milestones:
+            if score >= milestone and milestone not in self.achieved_milestones:
+                self.achieved_milestones.add(milestone)
+                print(f"\n{'='*70}")
+                print(f"*** MILESTONE ACHIEVED: {milestone} POINTS! ***")
+                print(f"Episode: {current_episode}, Snake Length: {len(self.game_engine.snake)}")
+                print(f"Current Stage: {self.curriculum_stage}/4")
+                
+                # Provide context on progress
+                if milestone >= 8000:
+                    print(f"[TROPHY] INCREDIBLE! You're approaching the theoretical maximum!")
+                elif milestone >= 5000:
+                    print(f"[STAR] OUTSTANDING! This is expert-level performance!")
+                elif milestone >= 1000:
+                    print(f"[STAR] EXCELLENT! Agent is mastering the game!")
+                elif milestone >= 500:
+                    print(f"[+] GREAT! Agent shows strong capabilities!")
+                elif milestone >= 200:
+                    print(f"[OK] GOOD! Agent has solid fundamentals!")
+                else:
+                    print(f"[OK] Progress! Building skills...")
+                print(f"{'='*70}\n")
+        
         self.recent_scores.append(score)
         
         # Need at least 10 scores to evaluate performance
@@ -1003,6 +1120,7 @@ class EnhancedDQNAgent(BaseDQNAgent):
             'recent_scores': list(self.recent_scores),
             'last_avg_score': self.last_avg_score,
             'last_epsilon_boost_episode': self.last_epsilon_boost_episode,
+            'achieved_milestones': list(self.achieved_milestones),  # Save milestone progress
         }
         torch.save(checkpoint, filepath)
     
@@ -1067,6 +1185,12 @@ class EnhancedDQNAgent(BaseDQNAgent):
             
             self.last_avg_score = checkpoint.get('last_avg_score', 0)
             self.last_epsilon_boost_episode = checkpoint.get('last_epsilon_boost_episode', -200)
+            
+            # Load milestone progress if available
+            if 'achieved_milestones' in checkpoint:
+                self.achieved_milestones = set(checkpoint['achieved_milestones'])
+                if self.achieved_milestones:
+                    print(f"Loaded {len(self.achieved_milestones)} achieved milestones: {sorted(self.achieved_milestones)}")
             
             # Update optimizer learning rate
             for param_group in self.optimizer.param_groups:

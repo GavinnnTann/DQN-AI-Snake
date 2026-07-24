@@ -1,0 +1,28 @@
+{
+  "scores": [
+    0,
+    20,
+    310,
+    270,
+    230
+  ],
+  "running_avgs": [
+    0.0,
+    78.0,
+    153.5,
+    169.67,
+    173.5
+  ],
+  "steps": [
+    1001,
+    1001,
+    1001,
+    1001,
+    579
+  ],
+  "best_score": 320,
+  "episodes_completed": 5,
+  "training_interrupted": true,
+  "timestamp": 1760516271.420604,
+  "date": "2025-10-15 16:17:51"
+}
