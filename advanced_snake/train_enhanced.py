@@ -25,10 +25,10 @@ from game_engine import GameEngine
 from enhanced_dqn import EnhancedDQNAgent
 
 
-def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learning_rate=None, batch_size=None, model_number=None):
+def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learning_rate=None, batch_size=None, model_number=None, train_every=4, use_shield=True):
     """
     Train the enhanced DQN agent.
-    
+
     Args:
         episodes: Number of training episodes
         use_existing: Whether to load existing model
@@ -36,6 +36,12 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
         learning_rate: Learning rate for optimizer (if None, uses value from constants.py)
         batch_size: Batch size for training (if None, uses value from constants.py)
         model_number: Specific model number to save/load (e.g., 1, 2, 3). If None, uses default name.
+        train_every: Run a gradient update every N environment steps (higher = faster,
+                     fewer updates per step of experience). 4 is the classic DQN value.
+        use_shield: If True, explore inside the survival shield (safe but LONG episodes).
+                    If False, plain epsilon-greedy - the snake dies early, so episodes are
+                    much shorter and training is far faster. The play-time cycle backbone
+                    guarantees the win regardless, so shield-free training is usually fine.
     """
     print("\n" + "="*70)
     print("ENHANCED DQN TRAINING WITH A* GUIDANCE")
@@ -60,7 +66,12 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
     # sharpens the network's food-seeking (used at play time both for the
     # non-guaranteed "pure shield" mode and to pick among safe backbone shortcuts).
     agent.use_cycle_backbone = False
-    
+
+    # Speed controls.
+    agent.use_safety_shield = use_shield
+    print(f"[OK] Safety shield during training: {'ON (safe exploration, longer episodes)' if use_shield else 'OFF (plain e-greedy, short/fast episodes)'}")
+    print(f"[OK] Gradient update every {train_every} step(s)")
+
     # Track starting episode for continuation
     start_episode = 1
     
@@ -219,8 +230,10 @@ def train_enhanced_dqn(episodes=1000, use_existing=True, save_interval=50, learn
             # Store transition
             agent.memory.add(state, action, reward, new_state, game_engine.game_over)
 
-            # Train the agent
-            loss = agent.optimize_model()
+            # Train the agent every `train_every` steps (optimize is ~70% of a
+            # step's cost, so this is the single biggest wall-clock speedup).
+            if steps % train_every == 0:
+                loss = agent.optimize_model()
 
             # Track starvation (steps since last food)
             if game_engine.score > old_score:
@@ -379,7 +392,9 @@ if __name__ == "__main__":
     parser.add_argument('--learning-rate', type=float, default=None, help='Learning rate for optimizer')
     parser.add_argument('--batch-size', type=int, default=None, help='Batch size for training (32-512)')
     parser.add_argument('--model-number', type=int, default=None, help='Model number for saving (e.g., 1, 2, 3)')
-    
+    parser.add_argument('--train-every', type=int, default=4, help='Run a gradient update every N steps (default 4; higher = faster)')
+    parser.add_argument('--no-shield', action='store_true', help='Disable the survival shield during training (much faster: episodes end on death instead of surviving thousands of steps)')
+
     # Stuck detection parameters
     parser.add_argument('--enable-stuck-detection', action='store_true', help='Enable stuck detection (default from constants.py)')
     parser.add_argument('--disable-stuck-detection', action='store_true', help='Disable stuck detection')
@@ -418,5 +433,7 @@ if __name__ == "__main__":
         save_interval=args.save_interval,
         learning_rate=args.learning_rate,
         batch_size=args.batch_size,
-        model_number=args.model_number
+        model_number=args.model_number,
+        train_every=args.train_every,
+        use_shield=not args.no_shield
     )

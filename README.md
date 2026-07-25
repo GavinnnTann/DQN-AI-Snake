@@ -295,6 +295,32 @@ python train_enhanced.py --episodes 1000 --model-number 1
 
 # Custom hyperparameters
 python train_enhanced.py --episodes 2000 --learning-rate 0.001 --batch-size 128 --model-number 2
+
+# FAST training (much shorter episodes)
+python train_enhanced.py --episodes 2000 --no-shield --train-every 4 --new-model
+```
+
+#### **Making Training Faster**
+
+Training speed is dominated by two things, both now tunable:
+
+| Lever | What it does | Effect |
+|---|---|---|
+| `--train-every N` | Runs one gradient update every **N** steps (default **4**). `optimize_model` is ~70% of a step's cost, so this is the biggest per-step win. | ~1.8× faster/step at N=4 |
+| `--no-shield` | Trains with plain ε-greedy instead of the survival shield. Without the shield the snake **dies early**, so episodes are ~200 steps instead of running to the starvation cap. | ~16× faster **per episode** |
+
+Measured on a 30×30 board (RTX 4050):
+- Old default (shield, update every step): **~22 s/episode**
+- New default (shield, update every 4): **~12 s/episode**
+- `--no-shield --train-every 4`: **~1.4 s/episode**
+
+Because the **play-time cycle backbone guarantees the win regardless of the network**, `--no-shield` training loses nothing important — it just sharpens food-seeking for the pure-shield showcase mode. Two extra facts:
+- An internal fix removed 128 needless GPU↔CPU syncs per gradient update (states were round-tripped one at a time); this applies automatically.
+- Training is **CPU-bound** (tiny network), so a bigger `--batch-size` barely changes wall-clock — prefer `--train-every` / `--no-shield` instead.
+
+```bash
+# (reference) all training flags
+python train_enhanced.py --help
 ```
 
 **Original DQN:**
